@@ -14,11 +14,10 @@ exports.handler = async (event) => {
 
   const { system, messages } = JSON.parse(event.body || '{}');
 
-  // Build contents — inject system as first user message
   const contents = [];
   if (system) {
-    contents.push({ role: 'user',  parts: [{ text: `הוראות מערכת:\n${system}` }] });
-    contents.push({ role: 'model', parts: [{ text: 'הבנתי, אפעל לפי ההוראות.' }] });
+    contents.push({ role: 'user',  parts: [{ text: `הוראות:\n${system}` }] });
+    contents.push({ role: 'model', parts: [{ text: 'הבנתי.' }] });
   }
   for (const m of (messages || [])) {
     contents.push({
@@ -27,7 +26,7 @@ exports.handler = async (event) => {
     });
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
   try {
     const res = await fetch(url, {
