@@ -1,30 +1,52 @@
 exports.handler = async (event) => {
-  // Only allow POST
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'Method Not Allowed' };
-  }
-
-  // CORS headers
-  const headers = {
+  const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
   };
 
-  try {
-    const { system, messages } = JSON.parse(event.body);
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: corsHeaders, body: '' };
+  }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, headers: corsHeaders, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return {
+      statusCode: 500,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: 'GEMINI_API_KEY לא מוגדר' }),
+    };
+  }
+
+  let body;
+  try {
+    body = JSON.parse(event.body);
+  } catch (e) {
+    return { statusCode: 400, headers: corsHeaders, body: JSON.stringify({ error: 'Invalid JSON' }) };
+  }
+
+  const { system, messages } = body;
+
+  const contents = (messages || []).map(msg => ({
+    role: msg.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: msg.content }],
+  }));
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        system,
-        messages,
+        system_instruction: { parts: [{ text: system || '' }] },
+        contents,
+        generationConfig: { maxOutputTokens: 1000, temperature: 0.7 },
       }),
     });
 
@@ -33,21 +55,23 @@ exports.handler = async (event) => {
     if (!response.ok) {
       return {
         statusCode: response.status,
-        headers,
-        body: JSON.stringify({ error: data.error?.message || 'API error' }),
+        headers: corsHeaders,
+        body: JSON.stringify({ error: data.error?.message || 'Gemini error' }),
       };
     }
 
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'אין תגובה';
+
     return {
       statusCode: 200,
-      headers,
-      body: JSON.stringify(data),
+      headers: corsHeaders,
+      body: JSON.stringify({ content: [{ type: 'text', text }] }),
     };
   } catch (err) {
     return {
-      statusCode: 500,
-      headers,
-      body: JSON.stringify({ error: err.message }),
+      statusCode: 502,
+      headers: corsHeaders,
+      body: JSON.stringify({ error: `שגיאת חיבור: ${err.message}` }),
     };
   }
 };
