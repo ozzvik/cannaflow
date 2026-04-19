@@ -1736,7 +1736,7 @@ async function sendAI(){
     else if(m.role==='ai'&&i>0) contents.push({role:'model',parts:[{text:m.text}]});
   }
 
-  const GEMINI_KEY='AIzaSyA0kWroPKsaP9itgJeeMb8sWBv6UFtfkxc';
+  const GEMINI_KEY='AIzaSyAzA8cYidw--5YDNFJFrvinhFQLN3V8j7o';
   const url=`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`;
 
   try{
