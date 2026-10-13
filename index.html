@@ -4418,6 +4418,15 @@ async function cleanOldBackups(){
 }
 
 // ── שחזור מגיבוי ──
+function closeBackupPanelAndOpenRestore(){
+  // סגור את פאנל הגיבויים (z-index:9500) ואז פתח שחזור
+  document.querySelectorAll('div').forEach(d=>{
+    const z=d.style.cssText;
+    if(z && z.indexOf('z-index:9500')!==-1 && z.indexOf('position:fixed')!==-1) d.remove();
+  });
+  openRestorePanel();
+}
+
 async function openRestorePanel(){
   if(!isAdmin()){toast('⛔ גישה מנהל בלבד');return;}
   toast('⏳ טוען גיבויים...');
@@ -6552,7 +6561,7 @@ function openBackupPanel(){
     +'<button onclick="backupToGoogleDrive()" style="width:100%;background:#0d1e18;border:1px solid #059669;color:#10b981;padding:10px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px;text-align:right">☁️ גבה לגוגל דרייב עכשיו</button>'
     +'<button onclick="downloadBackupNow()" style="width:100%;background:#091a10;border:1px solid #2e7048;color:#5ec98a;padding:10px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px;text-align:right">💾 הורד גיבוי מלא עכשיו (JSON)</button>'
     +'<button onclick="openLocalBackupsList()" style="width:100%;background:#0d1a38;border:1px solid var(--blu);color:#a0c8f0;padding:10px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px;text-align:right">💻 גיבויים מקומיים ('+localCount+')</button>'
-    +'<button onclick="openRestorePanel();document.querySelectorAll(\'div[style*=z-index:9500]\').forEach(d=>d.remove())" style="width:100%;background:#1a1408;border:1px solid #b45309;color:#fbbf24;padding:10px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px;text-align:right">☁️ שחזר מגיבוי Supabase</button>'
+    +'<button onclick="closeBackupPanelAndOpenRestore()" style="width:100%;background:#1a1408;border:1px solid #b45309;color:#fbbf24;padding:10px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px;text-align:right">☁️ שחזר מגיבוי Supabase</button>'
     +'<button onclick="importBackupFile()" style="width:100%;background:#200d0d;border:1px solid #7a2020;color:#f87171;padding:10px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px;text-align:right">📂 שחזר מקובץ JSON</button>'
     +'</div>'
     
