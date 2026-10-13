@@ -12,6 +12,8 @@
 <meta name="mobile-web-app-orientations" content="portrait,landscape">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="shortcut icon" href="icon-192.png">
 <title>בסדר</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
@@ -1826,7 +1828,7 @@ function vGantt(m){
       else if(ev?.type==='weather') cellBg='background:rgba(80,144,224,.05)';
       else if(isWeekend) cellBg='background:rgba(106,58,138,.04)';
       const isWeekStart=d.getDay()===0; // יום ראשון = תחילת שבוע
-      h+=`<td class="g-cell ${isT?'today':''}${isWeekStart?' week-start':''}" data-date="${day}" style="${isM&&!isT?'border-left:2px solid var(--brd);':''}${S._gWide?'min-width:64px;width:64px;':''}${cellBg}" onclick="ganttClick('${room.id}','${day}')">`;
+      h+=`<td class="g-cell ${isT?'today':''}${isWeekStart?' week-start':''}" data-date="${day}" style="${isM&&!isT?'border-left:2px solid var(--brd);':''}${S._gWide?'min-width:64px;width:64px;':''}${cellBg}" onclick="ganttClick('${room.id}','${day}')" ondragover="onGanttCellDragOver(event,'${day}','${room.id}')" ondragleave="onGanttCellDragLeave(event)" ondrop="onGanttCellDrop(event,'${day}','${room.id}')">`;
       // מספר יום בפינת התא
       h+=`<div style="position:absolute;top:1px;right:2px;font-size:7px;color:var(--brd);font-weight:700;pointer-events:none;z-index:1">${d.getDate()}</div>`;
       // רצועות אצווה קיימות
@@ -1878,16 +1880,21 @@ function vGantt(m){
         const commentDot=t._hasComments?'<div class="comment-bubble"></div>':'';
         const doneCheck=t.done?'<span style="position:absolute;top:1px;left:2px;font-size:8px;color:#5ec98a;font-weight:900">✓</span>':'';
 
+        // draggable רק עבור משימות ראשיות (לא chain/trig), ורק בתחילת רצועה רב-יומית
+        const canDrag=kind==='main'&&(!isMultiDay||multiDayPos==='start');
+        const dragAttrs=canDrag?` draggable="true" ondragstart="onGanttTaskDragStart(event,'${t.id}')" ondragend="onGanttTaskDragEnd(event)"`:'';
+        const cursorStyle=canDrag?'cursor:grab;':'';
+
         if(isMultiDay){
           // רצועה רציפה - עוברת דרך גבולות תאים
           const posClass=multiDayPos==='start'?'md-start':multiDayPos==='end'?'md-end':'md-mid';
-          const mStyle=`padding:0 4px;overflow:hidden;`;
-          h+=`<div class="g-bar ${cls}${fCls} ${posClass}" style="${mStyle}${doneStyle}height:28px;display:flex;align-items:center;" onclick="event.stopPropagation();showDetail('${t.id}','${kind}','${encodeURIComponent(label)}','${dept}')" title="${label}">
+          const mStyle=`padding:0 4px;overflow:hidden;${cursorStyle}`;
+          h+=`<div class="g-bar ${cls}${fCls} ${posClass}"${dragAttrs} style="${mStyle}${doneStyle}height:28px;display:flex;align-items:center;" onclick="event.stopPropagation();showDetail('${t.id}','${kind}','${encodeURIComponent(label)}','${dept}')" title="${label}">
             ${commentDot}${doneCheck}${multiDayPos==='start'?label:''}
           </div>`;
         } else {
           const meetStyle=isMeeting?'border-radius:50%;width:26px;height:26px;justify-content:center;padding:0':'';
-          h+=`<div class="g-bar ${cls}${fCls}" style="${meetStyle};${doneStyle}" onclick="event.stopPropagation();showDetail('${t.id}','${kind}','${encodeURIComponent(label)}','${dept}')" title="${label}${t.time?' '+t.time:''}">
+          h+=`<div class="g-bar ${cls}${fCls}"${dragAttrs} style="${meetStyle};${cursorStyle}${doneStyle}" onclick="event.stopPropagation();showDetail('${t.id}','${kind}','${encodeURIComponent(label)}','${dept}')" title="${label}${t.time?' '+t.time:''}">
             ${commentDot}${doneCheck}${t.priority==='urgent'?'<span class="g-udot"></span>':''}${icon?`<span>${icon}</span>`:''}${isMeeting?'🤝':label}
           </div>`;
         }
@@ -9592,6 +9599,66 @@ function onWkTaskDragEnd(e){
   e.target.style.opacity='';
   _dragInboxId=null;
   _dragInboxType=null;
+}
+
+// ── גרירת משימות בגאנט ──
+let _dragGanttTaskId=null;
+
+function onGanttTaskDragStart(e,tid){
+  _dragGanttTaskId=tid;
+  e.dataTransfer.effectAllowed='move';
+  try{e.dataTransfer.setData('text/plain',tid);}catch(_){}
+  // סטייל חזותי בזמן גרירה
+  e.target.style.opacity='.4';
+}
+
+function onGanttTaskDragEnd(e){
+  e.target.style.opacity='';
+  _dragGanttTaskId=null;
+}
+
+function onGanttCellDragOver(e,day,roomId){
+  if(!_dragGanttTaskId) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  e.currentTarget.style.background='rgba(94,201,138,.18)';
+  e.currentTarget.style.outline='2px dashed #5ec98a';
+  e.currentTarget.style.outlineOffset='-2px';
+}
+
+function onGanttCellDragLeave(e){
+  e.currentTarget.style.background='';
+  e.currentTarget.style.outline='';
+}
+
+function onGanttCellDrop(e,day,roomId){
+  e.preventDefault();
+  e.currentTarget.style.background='';
+  e.currentTarget.style.outline='';
+  const tid=_dragGanttTaskId;
+  _dragGanttTaskId=null;
+  if(!tid) return;
+  const t=S.tasks.find(x=>x.id===tid);
+  if(!t) return;
+  // אם לא השתנה שום דבר - צא
+  if(t.date===day&&(!roomId||t.room===roomId)) return;
+  pushUndo();
+  // אם רב-יומית - שמור את ההפרש
+  if(t.dateEnd){
+    const oldStart=new Date(t.date+'T12:00:00');
+    const newStart=new Date(day+'T12:00:00');
+    const diff=Math.round((newStart-oldStart)/86400000);
+    const newEnd=new Date(t.dateEnd+'T12:00:00');
+    newEnd.setDate(newEnd.getDate()+diff);
+    t.date=day;
+    t.dateEnd=newEnd.toISOString().slice(0,10);
+  } else {
+    t.date=day;
+  }
+  // אם נגרר לחדר אחר - עדכן גם חדר
+  if(roomId&&t.room!==roomId) t.room=roomId;
+  sv();render();
+  toast(`✅ הועבר ל-${fmtL?fmtL(day):day}`);
 }
 
 function onWkDragOver(e,day){
