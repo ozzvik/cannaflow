@@ -4271,6 +4271,7 @@ async function loadFromDB(retryCount=0){
         S.pendingApprovals=remote.pendingApprovals||[];
         S.invMaterials=remote.invMaterials||S.invMaterials||[];
         S._invTargets=remote._invTargets||S._invTargets||{};
+        S._invMeta=remote._invMeta||S._invMeta||{};
         S.view=currentView||'gantt';
         S.df='all';
         _lastKnownTaskCount=S.tasks.length;
@@ -4338,7 +4339,8 @@ async function saveToDB(){
       protocols:S.protocols,fertTanks:S.fertTanks,mothersMap:S.mothersMap,motherRegistry:S.motherRegistry,
       pendingApprovals:S.pendingApprovals||[],
       invMaterials:S.invMaterials||[],
-      _invTargets:S._invTargets||{}
+      _invTargets:S._invTargets||{},
+      _invMeta:S._invMeta||{}
     };
     const{error}=await _sb.from('shared_state').upsert({
       key:'main',
@@ -4553,6 +4555,7 @@ function subscribeRealtime(){
           S.motherRegistry=remote.motherRegistry||S.motherRegistry;
           S.invMaterials=remote.invMaterials||S.invMaterials||[];
           S._invTargets=remote._invTargets||S._invTargets||{};
+          S._invMeta=remote._invMeta||S._invMeta||{};
           _svLocal();render();
           syncDot('ok');
         }
@@ -5627,7 +5630,7 @@ function vInv(m){
     const qty=stored.qty;
     const target=mat.target||0;
     const deficit=target>0&&qty!==null?Math.max(0,target-qty):0;
-    return{id:mat.id,name:mat.name,target,unit:mat.unit||'יח׳',qty,deficit,cat:mat.cat||'כללי',_custom:mat._custom};
+    return{id:mat.id,name:mat.name,target,unit:mat.unit||'יח׳',qty,deficit,cat:mat.cat||'כללי',_custom:mat._custom,supplier:mat.supplier||'',sku:mat.sku||''};
   });
 
   // סיכומים לשורת העל
@@ -5680,14 +5683,20 @@ function vInv(m){
       const isOk=hasQty&&f.target>0&&f.qty>=f.target;
       const qtyColor=!hasQty?'var(--txm)':isLow?'#ef4444':isOk?'#5ec98a':'#fbbf24';
       const rowBg=f.deficit>0?'rgba(251,191,36,.05)':'var(--surf)';
+      const editBtn=`<button onclick="event.stopPropagation();invEditMat('${f.id}')" title="פרטים (ספק/מק״ט)" style="background:transparent;border:none;color:#a0c8f0;cursor:pointer;font-size:14px;padding:0 4px">✏️</button>`;
       const removeBtn=f._custom?`<button onclick="event.stopPropagation();invRemoveCustomMat('${f.id}')" title="הסר פריט" style="background:transparent;border:none;color:#7a2020;cursor:pointer;font-size:14px;padding:0 4px">✕</button>`:'';
+      // סיכום ספק/מק"ט בשורה
+      const supplier=f.supplier||'';
+      const sku=f.sku||'';
+      const meta=(supplier||sku)?`<div style="font-size:9px;color:var(--txm);margin-top:1px">${supplier?`🏪 ${supplier}`:''}${supplier&&sku?' · ':''}${sku?`#${sku}`:''}</div>`:'';
       h+=`<div style="display:grid;grid-template-columns:1fr 170px 70px 70px;gap:8px;align-items:center;padding:8px 10px;background:${rowBg};border-bottom:1px solid var(--brd);transition:background .15s" onmouseenter="this.style.background='var(--surf2)'" onmouseleave="this.style.background='${rowBg}'">
-        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+        <div style="display:flex;align-items:center;gap:4px;min-width:0">
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</div>
             <div style="font-size:10px;color:var(--txm)">${f.unit}</div>
+            ${meta}
           </div>
-          ${removeBtn}
+          ${editBtn}${removeBtn}
         </div>
         <!-- stepper -->
         <div style="display:flex;align-items:center;gap:2px;justify-content:center">
@@ -5744,19 +5753,74 @@ function invSetQtyDirect(id,val){
 // עדכון יעד (חוסר מתחשב בזה)
 function invSetTarget(id,val){
   const n=Math.max(0,parseInt(val)||0);
-  // יעד שמור ב-INV_MATERIALS או ב-S.invMaterials
-  const builtin=INV_MATERIALS.find(m=>m.id===id);
-  if(builtin){
-    // שמור override ב-S._invTargets
-    if(!S._invTargets) S._invTargets={};
-    S._invTargets[id]=n;
-  } else if(S.invMaterials){
+  if(!S._invMeta) S._invMeta={};
+  if(!S._invMeta[id]) S._invMeta[id]={};
+  S._invMeta[id].target=n;
+  // אם זה פריט מותאם - עדכן גם ישירות
+  if(S.invMaterials){
     const custom=S.invMaterials.find(m=>m.id===id);
     if(custom) custom.target=n;
   }
   sv();
   _invUpdateRow(id);
   _invUpdateHeader();
+}
+
+// עריכת פרטי פריט (שם/ספק/מק"ט/יחידה/קטגוריה/יעד)
+function invEditMat(id){
+  const allMats=typeof getAllMaterials==='function'?getAllMaterials():INV_MATERIALS;
+  const m=allMats.find(x=>x.id===id);
+  if(!m) return;
+  const isCustom=!!m._custom;
+  const dialog=document.createElement('div');
+  dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
+  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:380px;max-height:85vh;overflow:auto">
+    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:12px">✏️ עריכת פריט</div>
+    <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">שם המוצר ${isCustom?'':'<span style="color:#7a7a7a">(פריט מובנה - לא ניתן לשינוי)</span>'}</div><input id="em-name" value="${m.name.replace(/"/g,'&quot;')}" ${isCustom?'':'disabled'} style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
+    <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">🏪 ספק</div><input id="em-supplier" value="${(m.supplier||'').replace(/"/g,'&quot;')}" placeholder="שם הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
+    <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">#  מק"ט</div><input id="em-sku" value="${(m.sku||'').replace(/"/g,'&quot;')}" placeholder="SKU/מק״ט אצל הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <label><div style="font-size:11px;color:var(--txm);margin-bottom:3px">יחידה</div><input id="em-unit" value="${(m.unit||'יח׳').replace(/"/g,'&quot;')}" ${isCustom?'':'disabled'} style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
+      <label><div style="font-size:11px;color:var(--txm);margin-bottom:3px">יעד</div><input id="em-target" type="number" value="${m.target||0}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
+    </div>
+    ${isCustom?`<label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">קטגוריה</div><input id="em-cat" value="${(m.cat||'אחר').replace(/"/g,'&quot;')}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>`:''}
+    <div style="display:flex;gap:6px">
+      <button onclick="invSaveMatMeta('${id}')" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">💾 שמור</button>
+      <button onclick="this.closest('div[style*=fixed]').remove()" style="background:var(--surf2);border:1px solid var(--brd);color:var(--txd);padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">ביטול</button>
+    </div>
+  </div>`;
+  document.body.appendChild(dialog);
+  dialog.onclick=(e)=>{if(e.target===dialog)dialog.remove();};
+  setTimeout(()=>document.getElementById('em-supplier')?.focus(),80);
+}
+
+function invSaveMatMeta(id){
+  const supplier=(document.getElementById('em-supplier')?.value||'').trim();
+  const sku=(document.getElementById('em-sku')?.value||'').trim();
+  const target=parseInt(document.getElementById('em-target')?.value)||0;
+  const nameEl=document.getElementById('em-name');
+  const unitEl=document.getElementById('em-unit');
+  const catEl=document.getElementById('em-cat');
+  // עדכן meta
+  if(!S._invMeta) S._invMeta={};
+  if(!S._invMeta[id]) S._invMeta[id]={};
+  S._invMeta[id].supplier=supplier;
+  S._invMeta[id].sku=sku;
+  S._invMeta[id].target=target;
+  // אם פריט מותאם - עדכן גם ישירות
+  const custom=(S.invMaterials||[]).find(m=>m.id===id);
+  if(custom){
+    if(nameEl&&!nameEl.disabled) custom.name=(nameEl.value||'').trim()||custom.name;
+    if(unitEl&&!unitEl.disabled) custom.unit=(unitEl.value||'').trim()||custom.unit;
+    if(catEl) custom.cat=(catEl.value||'').trim()||custom.cat;
+    custom.supplier=supplier;
+    custom.sku=sku;
+    custom.target=target;
+  }
+  sv();
+  document.querySelectorAll('div[style*="z-index:9500"]').forEach(d=>d.remove());
+  render();
+  toast('✅ נשמר');
 }
 
 // עדכון שורה בודדת (DOM-level, בלי re-render)
@@ -5799,33 +5863,71 @@ function invShowShoppingList(){
     if(qty===null||qty===undefined||target<=0) return null;
     const deficit=target-qty;
     if(deficit<=0) return null;
-    return {name:mat.name,amount:Math.ceil(deficit),unit:mat.unit||'יח׳',cat:mat.cat||'כללי'};
+    return {
+      name:mat.name,
+      amount:Math.ceil(deficit),
+      unit:mat.unit||'יח׳',
+      cat:mat.cat||'כללי',
+      supplier:mat.supplier||'',
+      sku:mat.sku||''
+    };
   }).filter(Boolean);
   if(!items.length){toast('אין פריטים לקניה');return;}
-  // קבץ לפי קטגוריות
-  const cats=[...new Set(items.map(i=>i.cat))];
+
+  // קבץ לפי ספק (ללא ספק → "ללא ספק")
+  const grouped={};
+  items.forEach(i=>{
+    const key=i.supplier||'ללא ספק';
+    if(!grouped[key]) grouped[key]=[];
+    grouped[key].push(i);
+  });
+  // מיון: קודם ספקים מוגדרים לפי א-ב, "ללא ספק" בסוף
+  const suppliers=Object.keys(grouped).sort((a,b)=>{
+    if(a==='ללא ספק') return 1;
+    if(b==='ללא ספק') return -1;
+    return a.localeCompare(b,'he');
+  });
+
   const dialog=document.createElement('div');
   dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
+
   let listHtml='';
-  cats.forEach(cat=>{
-    listHtml+=`<div style="font-size:11px;font-weight:900;color:#a0c8f0;margin-top:12px;margin-bottom:4px">${cat}</div>`;
-    items.filter(i=>i.cat===cat).forEach(i=>{
-      listHtml+=`<div style="display:flex;justify-content:space-between;padding:5px 10px;background:var(--surf2);border-radius:5px;margin-bottom:3px"><span style="font-weight:700">${i.name}</span><span style="color:#fbbf24;font-weight:900">${i.amount} ${i.unit}</span></div>`;
+  suppliers.forEach(sup=>{
+    const supItems=grouped[sup];
+    const isNoSupplier=sup==='ללא ספק';
+    listHtml+=`<div style="margin-top:14px;margin-bottom:6px;padding:6px 10px;background:${isNoSupplier?'#2a1a1a':'#0d1a38'};border:1px solid ${isNoSupplier?'#7a2020':'var(--blu)'};border-radius:6px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:12px;font-weight:900;color:${isNoSupplier?'#f08080':'#a0c8f0'}">🏪 ${sup}</div>
+      <div style="font-size:10px;color:var(--txm)">${supItems.length} פריטים</div>
+    </div>`;
+    supItems.forEach(i=>{
+      listHtml+=`<div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:6px 10px;background:var(--surf2);border-radius:5px;margin-bottom:3px;align-items:center">
+        <div>
+          <div style="font-weight:700;font-size:13px">${i.name}</div>
+          ${i.sku?`<div style="font-size:10px;color:var(--txm);font-family:monospace">מק״ט: ${i.sku}</div>`:''}
+        </div>
+        <div style="color:#fbbf24;font-weight:900;font-size:14px;white-space:nowrap">${i.amount} ${i.unit}</div>
+      </div>`;
     });
   });
-  // הכן טקסט לshare
+
+  // הכן טקסט לshare — מקובץ לפי ספק עם מק"ט
   const textLines=['רשימת רכש — '+new Date().toLocaleDateString('he-IL'),''];
-  cats.forEach(cat=>{
-    textLines.push('# '+cat);
-    items.filter(i=>i.cat===cat).forEach(i=>{
-      textLines.push('• '+i.name+' — '+i.amount+' '+i.unit);
+  suppliers.forEach(sup=>{
+    textLines.push('═ 🏪 '+sup+' ═');
+    grouped[sup].forEach(i=>{
+      const skuTxt=i.sku?` [מק״ט: ${i.sku}]`:'';
+      textLines.push('• '+i.name+' — '+i.amount+' '+i.unit+skuTxt);
     });
     textLines.push('');
   });
   const fullText=textLines.join('\n');
-  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:420px;max-height:85vh;overflow:auto">
-    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:4px">🛒 רשימת רכש (${items.length})</div>
-    <div style="font-size:11px;color:var(--txm);margin-bottom:8px">${new Date().toLocaleDateString('he-IL')}</div>
+
+  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:460px;max-height:85vh;overflow:auto">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div style="font-size:15px;font-weight:900;color:var(--tx)">🛒 רשימת רכש (${items.length})</div>
+      <div style="font-size:10px;color:var(--txm)">${suppliers.length} ספקים</div>
+    </div>
+    <div style="font-size:11px;color:var(--txm);margin-bottom:4px">${new Date().toLocaleDateString('he-IL')}</div>
     <div style="max-height:50vh;overflow:auto;margin-bottom:12px">${listHtml}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       <button onclick="invSendEmail()" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📧 אימייל</button>
@@ -10790,10 +10892,27 @@ function assignMotherId(strain,tableId,plantId){
 // ── ניהול חומרים דינמי ──
 function getAllMaterials(){
   // שילוב של INV_MATERIALS + S.invMaterials (נוספו ע"י המשתמש)
-  // עם override של target מ-S._invTargets אם קיים
-  const overrides=S._invTargets||{};
-  const builtin=INV_MATERIALS.map(m=>overrides[m.id]!==undefined?{...m,target:overrides[m.id]}:m);
-  const custom=(S.invMaterials||[]).map(m=>({...m,_custom:true,...(overrides[m.id]!==undefined?{target:overrides[m.id]}:{})}));
+  // עם override של target/supplier/sku מ-S._invMeta אם קיים
+  const meta=S._invMeta||{};
+  const applyMeta=(m)=>{
+    const mt=meta[m.id];
+    if(!mt) return m;
+    return {...m,
+      target:mt.target!==undefined?mt.target:m.target,
+      supplier:mt.supplier!==undefined?mt.supplier:(m.supplier||''),
+      sku:mt.sku!==undefined?mt.sku:(m.sku||''),
+    };
+  };
+  // תאימות לאחור ל-S._invTargets (רק target)
+  if(S._invTargets){
+    if(!S._invMeta) S._invMeta={};
+    Object.entries(S._invTargets).forEach(([id,target])=>{
+      if(!S._invMeta[id]) S._invMeta[id]={};
+      if(S._invMeta[id].target===undefined) S._invMeta[id].target=target;
+    });
+  }
+  const builtin=INV_MATERIALS.map(applyMeta);
+  const custom=(S.invMaterials||[]).map(m=>({...applyMeta(m),_custom:true}));
   return [...builtin,...custom];
 }
 
