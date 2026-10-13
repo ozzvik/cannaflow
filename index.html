@@ -21,6 +21,10 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
+/* הסרת חיצי spinner של input type=number במסך המלאי */
+#inv-scroll input[type=number]::-webkit-inner-spin-button,
+#inv-scroll input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+#inv-scroll input[type=number]{-moz-appearance:textfield}
 :root{
   --bg:#0d0f12;--surf:#141820;--surf2:#1c2230;--brd:#232d40;
   --g:#4ade80;--gdim:#1e6640;--gdk:#091a10;
@@ -628,8 +632,7 @@ textarea{resize:vertical;min-height:60px;line-height:1.6}
       <button class="npill" id="vb-daily"  onclick="setV('daily')"  title="יומי">☀️ יומי</button>
       <button class="npill" id="vb-rooms"    onclick="setV('rooms')"    title="חדרים">🏠 חדרים</button>
       <button class="npill" id="vb-presence" onclick="setV('presence')" title="צוות">👥 צוות</button>
-      <button class="npill" id="vb-purch"  onclick="setV('purch')"  title="רכש">🛒 רכש</button>
-      <button class="npill" id="vb-inv"    onclick="setV('inv')"    title="מלאי">🧪 מלאי</button>
+      <button class="npill" id="vb-inv"    onclick="setV('inv')"    title="מלאי + רכש">🧪 מלאי / רכש</button>
     </div>
     <div class="dept-strip" id="dept-strip"></div>
     <div id="main"></div>
@@ -1282,6 +1285,8 @@ function dryConflicts(days){
 //  RENDER SHELL
 // ═══════════════════════════════════════
 function setV(v){
+  // רכש אוחד למלאי - כל קריאה לפריש מפנה למלאי
+  if(v==='purch') v='inv';
   S.view=v;
   if(v==='gantt'){
     S.df='all';
@@ -4264,6 +4269,8 @@ async function loadFromDB(retryCount=0){
         S.protocols=remote.protocols||S.protocols;
         S.fertTanks=remote.fertTanks||S.fertTanks;
         S.pendingApprovals=remote.pendingApprovals||[];
+        S.invMaterials=remote.invMaterials||S.invMaterials||[];
+        S._invTargets=remote._invTargets||S._invTargets||{};
         S.view=currentView||'gantt';
         S.df='all';
         _lastKnownTaskCount=S.tasks.length;
@@ -4329,7 +4336,9 @@ async function saveToDB(){
       contacts:S.contacts||[],appUsers:S.appUsers||[],
       batchPhases:S.batchPhases||{},strains:S.strains||[],
       protocols:S.protocols,fertTanks:S.fertTanks,mothersMap:S.mothersMap,motherRegistry:S.motherRegistry,
-      pendingApprovals:S.pendingApprovals||[]
+      pendingApprovals:S.pendingApprovals||[],
+      invMaterials:S.invMaterials||[],
+      _invTargets:S._invTargets||{}
     };
     const{error}=await _sb.from('shared_state').upsert({
       key:'main',
@@ -4542,6 +4551,8 @@ function subscribeRealtime(){
           S.pendingApprovals=remote.pendingApprovals||S.pendingApprovals||[];
           S.mothersMap=remote.mothersMap||S.mothersMap;
           S.motherRegistry=remote.motherRegistry||S.motherRegistry;
+          S.invMaterials=remote.invMaterials||S.invMaterials||[];
+          S._invTargets=remote._invTargets||S._invTargets||{};
           _svLocal();render();
           syncDot('ok');
         }
@@ -5610,97 +5621,243 @@ function ensureWeeklyCountTask(){
 function vInv(m){
   if(!S.invState) S.invState={activeCard:null,extras:[],extraCounter:0};
   const inv=S.invState;
-  const QUICK=[0,1,2,3,4,5,6,8,10,12,16,20,24];
-  const PRIORITIES=[
-    {v:'urgent',label:'🔴 דחוף',color:'#ef4444'},
-    {v:'normal',label:'🟡 רגיל',color:'#f59e0b'},
-    {v:'low',   label:'🟢 נמוך', color:'#10b981'},
-  ];
   const allMats=typeof getAllMaterials==='function'?getAllMaterials():INV_MATERIALS;
   const ferts=allMats.map(mat=>{
-    const stored=inv[mat.id]||{qty:null,priority:'normal'};
-    return{id:mat.id,name:mat.name,sku:mat.sku||'',target:mat.target,unit:mat.unit,qty:stored.qty,priority:stored.priority,cat:mat.cat||'כללי',_custom:mat._custom};
+    const stored=inv[mat.id]||{qty:null};
+    const qty=stored.qty;
+    const target=mat.target||0;
+    const deficit=target>0&&qty!==null?Math.max(0,target-qty):0;
+    return{id:mat.id,name:mat.name,target,unit:mat.unit||'יח׳',qty,deficit,cat:mat.cat||'כללי',_custom:mat._custom};
   });
-  const mode=S._invMode||'stock';
 
-  // המלצת רכש: סופר כמה חוסר יש וכמה פריטים לקנות
-  const needsPurchase=ferts.filter(f=>f.qty!==null&&f.target>0&&f.qty<f.target).length;
-  const modeBtns=`<div style="display:flex;gap:8px;margin-bottom:12px;flex-shrink:0;align-items:center">
-    <div style="flex:1;font-size:14px;font-weight:900;color:#a0c8f0">📦 מלאי במחסן</div>
-    <button onclick="setV('purch')" style="padding:8px 14px;border-radius:10px;font-family:'Heebo',sans-serif;font-size:12px;font-weight:800;cursor:pointer;background:#0d1a1e;border:1px solid #2e7048;color:#5ec98a">🛒 לרשימת רכש${needsPurchase>0?` (${needsPurchase})`:''}</button>
+  // סיכומים לשורת העל
+  const totalDeficit=ferts.reduce((s,f)=>s+f.deficit,0);
+  const itemsToBuy=ferts.filter(f=>f.deficit>0).length;
+  const notCountedCount=ferts.filter(f=>f.qty===null).length;
+
+  // קבץ לפי קטגוריות
+  const cats=[...new Set(ferts.map(f=>f.cat))];
+
+  let h=`<div id="inv-scroll" style="flex:1;overflow-y:auto;padding:12px 10px 80px;background:var(--bg)">`;
+
+  // ── כותרת + סיכום רכש בראש ──
+  h+=`<div style="background:linear-gradient(135deg,#0d1a1e,#061612);border:1px solid #2e7048;border-radius:14px;padding:12px 14px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+      <div style="font-size:15px;font-weight:900;color:#fff">🛒 רשימת רכש אוטומטית</div>
+      <div style="font-size:11px;color:var(--txm)">דרישה = יעד − מה שיש</div>
+    </div>
+    ${itemsToBuy>0
+      ?`<div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+          <div><div style="font-size:28px;font-weight:900;color:#fbbf24;line-height:1">${itemsToBuy}</div><div style="font-size:10px;color:var(--txm)">פריטים לקנות</div></div>
+          <div style="width:1px;height:36px;background:var(--brd)"></div>
+          <div style="flex:1"><button onclick="invShowShoppingList()" style="width:100%;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:10px;font-weight:900;font-size:13px;cursor:pointer;font-family:'Heebo',sans-serif">📋 הפק רשימה / 📧 שלח</button></div>
+        </div>`
+      :`<div style="font-size:12px;color:#5ec98a;font-weight:700;margin-top:6px">✓ המלאי מלא — אין צורך לקנות${notCountedCount>0?` (${notCountedCount} טרם נספרו)`:''}</div>`
+    }
   </div>`;
 
-    // ── מלאי קיים — רשת קומפקטית ──
-    let h=`<div id="inv-scroll" style="flex:1;overflow-y:auto;padding:10px 12px 80px">${modeBtns}`;
+  // ── כפתורי ניהול ──
+  h+=`<div style="display:flex;gap:6px;margin-bottom:12px">
+    <button onclick="invFillAll()" style="flex:1;padding:9px;border-radius:10px;background:#091a10;border:1px solid #2e7048;color:#5ec98a;font-family:'Heebo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">✨ מלאי מלא לכולם</button>
+    <button onclick="invAddCustomMat()" style="padding:9px 14px;border-radius:10px;background:#0d1a38;border:1px solid var(--blu);color:#a0c8f0;font-family:'Heebo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">➕ פריט חדש</button>
+  </div>`;
 
-    // כפתור השלמה אוטומטית
-    h+=`<div style="display:flex;gap:6px;margin-bottom:10px">
-      <button onclick="invFillAll()" style="flex:1;padding:9px;border-radius:10px;background:#091a10;border:1px solid #2e7048;color:#5ec98a;font-family:'Heebo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">✨ השלם הכל למלאי מלא</button>
-      <button onclick="invAddCustomMat()" style="padding:9px 14px;border-radius:10px;background:#0d1a38;border:1px solid var(--blu);color:#a0c8f0;font-family:'Heebo',sans-serif;font-size:12px;font-weight:700;cursor:pointer" title="הוסף פריט חדש לרשימה">➕ פריט</button>
-    </div>`;
+  // ── כותרת טבלה (sticky) ──
+  h+=`<div style="position:sticky;top:0;background:var(--bg);z-index:5;display:grid;grid-template-columns:1fr 170px 70px 70px;gap:8px;padding:6px 10px;font-size:10px;font-weight:800;color:var(--txm);border-bottom:1px solid var(--brd)">
+    <div>פריט</div>
+    <div style="text-align:center">כמות במלאי</div>
+    <div style="text-align:center">יעד</div>
+    <div style="text-align:center">לקנות</div>
+  </div>`;
 
-    // קבץ לפי קטגוריות
-    const cats=[...new Set(ferts.map(f=>f.cat||'כללי'))];
-    cats.forEach(cat=>{
-      const catFerts=ferts.filter(f=>(f.cat||'כללי')===cat);
-      const catTotal=catFerts.reduce((s,f)=>s+(f.qty||0),0);
-      const catTarget=catFerts.reduce((s,f)=>s+(f.target||0),0);
-      const catDeficit=catTarget>0?Math.max(0,catTarget-catTotal):0;
-      h+=`<div style="font-size:11px;font-weight:700;color:var(--txd);margin-bottom:6px;margin-top:4px;display:flex;align-items:center;gap:6px">
-        ${cat}
-        ${catDeficit>0?`<span style="font-size:9px;background:#200d0d;border:1px solid #ef4444;color:#ef4444;padding:1px 6px;border-radius:10px">חסר ${catDeficit}</span>`:''}
-      </div>`;
-      h+=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;margin-bottom:12px">`;
-      catFerts.forEach(f=>{
-        const hasQty=f.qty!==null;
-        const qty=hasQty?f.qty:null;
-        const target=f.target||0;
-        const deficit=hasQty&&target>0?Math.max(0,target-qty):null;
-        const isEmpty=qty===0;
-        const isLow=qty!==null&&qty<=2;
-        const borderCol=isEmpty?'#ef4444':isLow?'#f59e0b':hasQty?'#10b981':'var(--brd)';
-        const qtyCol=isEmpty?'#ef4444':isLow?'#f59e0b':'#5ec98a';
-        const isActive=inv.activeCard===f.id;
-        h+=`<div onclick="invToggleCard('${f.id}')" style="background:var(--surf);border:1px solid ${isActive?'var(--blu)':borderCol};border-radius:10px;padding:8px;cursor:pointer;transition:border-color .2s">
-          <div style="font-size:10px;font-weight:700;color:var(--tx);margin-bottom:3px;line-height:1.3">${f.name}</div>
-          <div style="display:flex;align-items:baseline;gap:4px">
-            <div style="font-size:20px;font-weight:900;color:${hasQty?qtyCol:'var(--txm)'};line-height:1">${hasQty?qty:'—'}</div>
-            ${target?`<div style="font-size:9px;color:var(--txm)">/ ${target} ${f.unit||'יח׳'}</div>`:`<div style="font-size:9px;color:var(--txm)">${f.unit||'יח׳'}</div>`}
+  // ── שורות הטבלה לפי קטגוריות ──
+  cats.forEach(cat=>{
+    const catFerts=ferts.filter(f=>f.cat===cat);
+    h+=`<div style="font-size:11px;font-weight:900;color:#a0c8f0;padding:10px 10px 4px;letter-spacing:.3px">${cat}</div>`;
+    catFerts.forEach(f=>{
+      const hasQty=f.qty!==null;
+      const isLow=hasQty&&f.target>0&&f.qty<=f.target*0.3;
+      const isOk=hasQty&&f.target>0&&f.qty>=f.target;
+      const qtyColor=!hasQty?'var(--txm)':isLow?'#ef4444':isOk?'#5ec98a':'#fbbf24';
+      const rowBg=f.deficit>0?'rgba(251,191,36,.05)':'var(--surf)';
+      const removeBtn=f._custom?`<button onclick="event.stopPropagation();invRemoveCustomMat('${f.id}')" title="הסר פריט" style="background:transparent;border:none;color:#7a2020;cursor:pointer;font-size:14px;padding:0 4px">✕</button>`:'';
+      h+=`<div style="display:grid;grid-template-columns:1fr 170px 70px 70px;gap:8px;align-items:center;padding:8px 10px;background:${rowBg};border-bottom:1px solid var(--brd);transition:background .15s" onmouseenter="this.style.background='var(--surf2)'" onmouseleave="this.style.background='${rowBg}'">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</div>
+            <div style="font-size:10px;color:var(--txm)">${f.unit}</div>
           </div>
-          ${deficit!==null&&deficit>0?`<div style="margin-top:4px;display:flex;align-items:center;justify-content:space-between;gap:3px">
-            <div style="background:#200d0d;border:1px solid #ef4444;border-radius:4px;padding:1px 5px;font-size:9px;color:#ef4444;font-weight:700">חסר ${deficit}</div>
-            <button onclick="event.stopPropagation();invSetQty('${f.id}',${target},false);render()" style="background:#091a10;border:1px solid #2e7048;color:#5ec98a;padding:1px 6px;border-radius:4px;font-size:9px;font-weight:700;cursor:pointer">✨</button>
-          </div>`:''}
-          ${deficit===0&&hasQty?`<div style="margin-top:2px;font-size:9px;color:#5ec98a;font-weight:700">✓ מלא</div>`:''}
-          ${isActive?`<div style="margin-top:6px;border-top:1px solid var(--brd);padding-top:6px">
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px">
-              ${QUICK.map(n=>`<button onclick="event.stopPropagation();invSetQty('${f.id}',${n},false)" style="padding:3px 1px;border-radius:4px;border:none;background:${f.qty===n?'var(--blu)':'var(--surf2)'};color:${f.qty===n?'#fff':'var(--tx)'};font-size:10px;font-weight:700;cursor:pointer">${n}</button>`).join('')}
-            </div>
-            <div style="display:flex;gap:3px;margin-top:4px">
-              <input type="number" id="invcust-${f.id}" placeholder="אחר" style="flex:1;padding:3px;border-radius:5px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:10px">
-              <button onclick="event.stopPropagation();invSetCustom('${f.id}',false)" style="padding:3px 7px;border-radius:5px;background:var(--blu);color:#fff;border:none;cursor:pointer;font-size:10px">✓</button>
-            </div>
-            ${target?`<button onclick="event.stopPropagation();invSetQty('${f.id}',${target},false)" style="width:100%;margin-top:4px;padding:3px;border-radius:5px;background:#091a10;border:1px solid #2e7048;color:#5ec98a;font-size:9px;font-weight:700;cursor:pointer">✨ השלם ל-${target}</button>`:''}
-          </div>`:''}
-        </div>`;
-      });
-      h+=`</div>`;
-    });
-
-    // מיכלים
-    h+=`<div style="font-size:12px;font-weight:700;color:var(--txd);margin-bottom:8px">🧪 מיכלים</div>`;
-    INV_TANKS.forEach(tank=>{
-      const canMake=canMakeTank(tank.id,getInventory());
-      h+=`<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surf);border:1px solid var(--brd);border-radius:8px;padding:8px 12px;margin-bottom:4px">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div style="width:8px;height:8px;border-radius:50%;background:${tank.color}"></div>
-          <span style="font-size:12px;font-weight:700">${tank.name}</span>
+          ${removeBtn}
         </div>
-        <span style="font-size:11px;color:${canMake?'#5ec98a':'var(--red)'};font-weight:700">${canMake?'✅ מוכן':'⚠️ חסר'}</span>
+        <!-- stepper -->
+        <div style="display:flex;align-items:center;gap:2px;justify-content:center">
+          <button onclick="invAdjust('${f.id}',-1)" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">−</button>
+          <input type="number" value="${hasQty?f.qty:''}" placeholder="—" onclick="this.select()" onchange="invSetQtyDirect('${f.id}',this.value)" style="width:52px;height:28px;border-radius:6px;border:1px solid ${hasQty?qtyColor:'var(--brd)'};background:var(--bg);color:${qtyColor};font-size:14px;font-weight:900;text-align:center;font-family:'Heebo',sans-serif;padding:0 2px;-moz-appearance:textfield" step="1" min="0">
+          <button onclick="invAdjust('${f.id}',1)" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">+</button>
+        </div>
+        <!-- יעד (editable) -->
+        <div style="text-align:center">
+          <input type="number" value="${f.target||''}" onclick="this.select()" onchange="invSetTarget('${f.id}',this.value)" style="width:48px;height:24px;border-radius:5px;border:1px solid var(--brd);background:var(--bg);color:var(--txd);font-size:12px;font-weight:700;text-align:center;font-family:'Heebo',sans-serif" min="0">
+        </div>
+        <!-- לקנות (חוסר) -->
+        <div style="text-align:center">
+          ${f.deficit>0
+            ?`<span style="display:inline-block;background:#fbbf24;color:#0d1a38;padding:4px 10px;border-radius:12px;font-size:13px;font-weight:900;min-width:36px">${f.deficit}</span>`
+            :(hasQty?`<span style="color:#5ec98a;font-size:14px">✓</span>`:`<span style="color:var(--txm)">—</span>`)}
+        </div>
       </div>`;
     });
-    h+=`</div>`;
-    m.innerHTML=h;
+  });
+
+  h+=`</div>`;
+  m.innerHTML=h;
+}
+
+// עדכון כמות ישירות מהstepper (ללא איפוס scroll - אין re-render מלא)
+function invAdjust(id,delta){
+  if(!S.invState) S.invState={activeCard:null,extras:[],extraCounter:0};
+  if(!S.invState[id]) S.invState[id]={qty:0,priority:'normal'};
+  const cur=S.invState[id].qty;
+  const next=Math.max(0,(cur===null?0:cur)+delta);
+  S.invState[id].qty=next;
+  if(!S.inventory) S.inventory={};
+  S.inventory[id]=next;
+  sv();
+  // עדכון חלקי במקום re-render מלא
+  _invUpdateRow(id);
+  _invUpdateHeader();
+}
+
+// עדכון כמות מהinput (כתיבה חופשית)
+function invSetQtyDirect(id,val){
+  if(!S.invState) S.invState={activeCard:null,extras:[],extraCounter:0};
+  const n=val===''||val===null?null:Math.max(0,parseFloat(val)||0);
+  if(!S.invState[id]) S.invState[id]={qty:null,priority:'normal'};
+  S.invState[id].qty=n;
+  if(!S.inventory) S.inventory={};
+  if(n!==null) S.inventory[id]=n;
+  sv();
+  _invUpdateRow(id);
+  _invUpdateHeader();
+}
+
+// עדכון יעד (חוסר מתחשב בזה)
+function invSetTarget(id,val){
+  const n=Math.max(0,parseInt(val)||0);
+  // יעד שמור ב-INV_MATERIALS או ב-S.invMaterials
+  const builtin=INV_MATERIALS.find(m=>m.id===id);
+  if(builtin){
+    // שמור override ב-S._invTargets
+    if(!S._invTargets) S._invTargets={};
+    S._invTargets[id]=n;
+  } else if(S.invMaterials){
+    const custom=S.invMaterials.find(m=>m.id===id);
+    if(custom) custom.target=n;
+  }
+  sv();
+  _invUpdateRow(id);
+  _invUpdateHeader();
+}
+
+// עדכון שורה בודדת (DOM-level, בלי re-render)
+function _invUpdateRow(id){
+  // פשוט נעשה re-render של המסך אבל נשמר scroll
+  const el=document.getElementById('inv-scroll');
+  const scrollTop=el?el.scrollTop:0;
+  // נמצא את ה-input שעשה focus כדי להחזיר focus אליו
+  const activeEl=document.activeElement;
+  const activeTag=activeEl?.tagName;
+  const activeVal=activeEl?.value;
+  render();
+  requestAnimationFrame(()=>{
+    const el2=document.getElementById('inv-scroll');
+    if(el2) el2.scrollTop=scrollTop;
+  });
+}
+
+function _invUpdateHeader(){
+  // הכותרת מתעדכנת כחלק מ-render
+  checkLowInventory&&checkLowInventory();
+}
+
+// הסר פריט מותאם
+function invRemoveCustomMat(id){
+  if(!confirm('להסיר את הפריט לצמיתות?')) return;
+  if(S.invMaterials) S.invMaterials=S.invMaterials.filter(m=>m.id!==id);
+  if(S.invState&&S.invState[id]) delete S.invState[id];
+  if(S.inventory&&S.inventory[id]!==undefined) delete S.inventory[id];
+  sv();render();
+}
+
+// פתח דיאלוג "שלח רשימת רכש"
+function invShowShoppingList(){
+  const allMats=typeof getAllMaterials==='function'?getAllMaterials():INV_MATERIALS;
+  const inv=S.invState||{};
+  const items=allMats.map(mat=>{
+    const qty=inv[mat.id]?.qty;
+    const target=mat.target||0;
+    if(qty===null||qty===undefined||target<=0) return null;
+    const deficit=target-qty;
+    if(deficit<=0) return null;
+    return {name:mat.name,amount:Math.ceil(deficit),unit:mat.unit||'יח׳',cat:mat.cat||'כללי'};
+  }).filter(Boolean);
+  if(!items.length){toast('אין פריטים לקניה');return;}
+  // קבץ לפי קטגוריות
+  const cats=[...new Set(items.map(i=>i.cat))];
+  const dialog=document.createElement('div');
+  dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
+  let listHtml='';
+  cats.forEach(cat=>{
+    listHtml+=`<div style="font-size:11px;font-weight:900;color:#a0c8f0;margin-top:12px;margin-bottom:4px">${cat}</div>`;
+    items.filter(i=>i.cat===cat).forEach(i=>{
+      listHtml+=`<div style="display:flex;justify-content:space-between;padding:5px 10px;background:var(--surf2);border-radius:5px;margin-bottom:3px"><span style="font-weight:700">${i.name}</span><span style="color:#fbbf24;font-weight:900">${i.amount} ${i.unit}</span></div>`;
+    });
+  });
+  // הכן טקסט לshare
+  const textLines=['רשימת רכש — '+new Date().toLocaleDateString('he-IL'),''];
+  cats.forEach(cat=>{
+    textLines.push('# '+cat);
+    items.filter(i=>i.cat===cat).forEach(i=>{
+      textLines.push('• '+i.name+' — '+i.amount+' '+i.unit);
+    });
+    textLines.push('');
+  });
+  const fullText=textLines.join('\n');
+  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:420px;max-height:85vh;overflow:auto">
+    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:4px">🛒 רשימת רכש (${items.length})</div>
+    <div style="font-size:11px;color:var(--txm);margin-bottom:8px">${new Date().toLocaleDateString('he-IL')}</div>
+    <div style="max-height:50vh;overflow:auto;margin-bottom:12px">${listHtml}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button onclick="invSendEmail()" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📧 אימייל</button>
+      <button onclick="invCopyToClipboard()" style="flex:1;background:#0d1a38;color:#a0c8f0;border:1px solid var(--blu);padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📋 העתק</button>
+      <button onclick="invShareWhatsapp()" style="flex:1;background:#128c7e;color:#fff;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">💬 וואטסאפ</button>
+      <button onclick="this.closest('div[style*=fixed]').remove()" style="background:var(--surf2);border:1px solid var(--brd);color:var(--txd);padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">סגור</button>
+    </div>
+    <textarea id="_sl-text" style="position:absolute;left:-9999px">${fullText}</textarea>
+  </div>`;
+  document.body.appendChild(dialog);
+  dialog.onclick=(e)=>{if(e.target===dialog)dialog.remove();};
+  window._shoppingListText=fullText;
+}
+
+function invSendEmail(){
+  const text=window._shoppingListText||'';
+  const subject='רשימת רכש בסדר — '+new Date().toLocaleDateString('he-IL');
+  const body=encodeURIComponent(text);
+  window.location.href=`mailto:Oz@bci-medical.com?subject=${encodeURIComponent(subject)}&body=${body}`;
+}
+function invCopyToClipboard(){
+  const text=window._shoppingListText||'';
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(text).then(()=>toast('📋 הועתק')).catch(()=>{
+      const ta=document.getElementById('_sl-text');
+      if(ta){ta.select();document.execCommand('copy');toast('📋 הועתק');}
+    });
+  }
+}
+function invShareWhatsapp(){
+  const text=window._shoppingListText||'';
+  window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank');
 }
 
 // הוספת פריט מותאם לרשימת המלאי
@@ -10633,8 +10790,11 @@ function assignMotherId(strain,tableId,plantId){
 // ── ניהול חומרים דינמי ──
 function getAllMaterials(){
   // שילוב של INV_MATERIALS + S.invMaterials (נוספו ע"י המשתמש)
-  const custom=(S.invMaterials||[]).map(m=>({...m,_custom:true}));
-  return [...INV_MATERIALS,...custom];
+  // עם override של target מ-S._invTargets אם קיים
+  const overrides=S._invTargets||{};
+  const builtin=INV_MATERIALS.map(m=>overrides[m.id]!==undefined?{...m,target:overrides[m.id]}:m);
+  const custom=(S.invMaterials||[]).map(m=>({...m,_custom:true,...(overrides[m.id]!==undefined?{target:overrides[m.id]}:{})}));
+  return [...builtin,...custom];
 }
 
 function addNewMaterial(){
