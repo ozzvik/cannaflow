@@ -5902,7 +5902,7 @@ function invBulkEdit(){
       <input type="checkbox" id="eb-supplier-on" ${commonSupplier?'checked':''} style="width:16px;height:16px">
       <div style="flex:1">
         <div style="font-size:11px;color:var(--txm)">🏪 ספק</div>
-        <input id="eb-supplier" value="${commonSupplier.replace(/"/g,'&quot;')}" placeholder="שם הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
+        <input id="eb-supplier" value="${commonSupplier.replace(/"/g,'&quot;')}" placeholder="שם הספק..." oninput="document.getElementById('eb-supplier-on').checked=true" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
       </div>
     </label>
 
@@ -5910,7 +5910,7 @@ function invBulkEdit(){
       <input type="checkbox" id="eb-target-on" ${commonTarget!==''&&commonTarget!==undefined?'checked':''} style="width:16px;height:16px">
       <div style="flex:1">
         <div style="font-size:11px;color:var(--txm)">🎯 יעד (יוחל על כולם)</div>
-        <input id="eb-target" type="number" value="${commonTarget||''}" placeholder="מספר..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
+        <input id="eb-target" type="number" value="${commonTarget||''}" placeholder="מספר..." oninput="document.getElementById('eb-target-on').checked=true" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
       </div>
     </label>
 
@@ -5918,10 +5918,11 @@ function invBulkEdit(){
       <input type="checkbox" id="eb-cat-on" ${commonCat?'checked':''} style="width:16px;height:16px">
       <div style="flex:1">
         <div style="font-size:11px;color:var(--txm)">📂 קטגוריה</div>
-        <input id="eb-cat" value="${commonCat.replace(/"/g,'&quot;')}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
+        <input id="eb-cat" value="${commonCat.replace(/"/g,'&quot;')}" oninput="document.getElementById('eb-cat-on').checked=true" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
       </div>
     </label>`:''}
 
+    <div style="font-size:10px;color:#5ec98a;background:#091a10;border:1px solid #2e7048;padding:6px 10px;border-radius:5px;margin-bottom:12px">💡 הסימון מופעל אוטומטית ברגע שמקלידים. רק שדות מסומנים ישמרו.</div>
     <div style="font-size:10px;color:var(--txm);background:var(--surf2);padding:6px 10px;border-radius:5px;margin-bottom:12px">⚠️ מק"ט לא ניתן לעריכה מרובה (ייחודי לכל פריט)</div>
 
     <div style="display:flex;gap:6px">
