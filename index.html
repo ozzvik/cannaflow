@@ -5660,13 +5660,22 @@ function vInv(m){
   </div>`;
 
   // ── כפתורי ניהול ──
-  h+=`<div style="display:flex;gap:6px;margin-bottom:12px">
+  h+=`<div style="display:flex;gap:6px;margin-bottom:8px">
     <button onclick="invFillAll()" style="flex:1;padding:9px;border-radius:10px;background:#091a10;border:1px solid #2e7048;color:#5ec98a;font-family:'Heebo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">✨ מלאי מלא לכולם</button>
     <button onclick="invAddCustomMat()" style="padding:9px 14px;border-radius:10px;background:#0d1a38;border:1px solid var(--blu);color:#a0c8f0;font-family:'Heebo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">➕ פריט חדש</button>
   </div>`;
 
+  // ── סרגל עריכה מרובה (מופיע רק כשסומנו פריטים) ──
+  const selCount=window._invSelected?.size||0;
+  h+=`<div id="inv-bulk-bar" style="display:${selCount>0?'flex':'none'};gap:6px;align-items:center;margin-bottom:10px;background:#0d1a38;border:1px solid var(--blu);border-radius:10px;padding:8px 10px">
+    <div style="flex:1;font-size:12px;font-weight:800;color:#a0c8f0">✓ נבחרו <span id="inv-bulk-count">${selCount}</span> פריטים</div>
+    <button onclick="invBulkEdit()" style="padding:7px 12px;border-radius:7px;background:#5ec98a;color:#0d1a38;border:none;font-family:'Heebo',sans-serif;font-size:12px;font-weight:800;cursor:pointer">✏️ ערוך נבחרים</button>
+    <button onclick="invSelectAll(false);render()" style="padding:7px 10px;border-radius:7px;background:var(--surf2);color:var(--txd);border:1px solid var(--brd);font-family:'Heebo',sans-serif;font-size:12px;font-weight:700;cursor:pointer">נקה</button>
+  </div>`;
+
   // ── כותרת טבלה (sticky) ──
-  h+=`<div style="position:sticky;top:0;background:var(--bg);z-index:5;display:grid;grid-template-columns:1fr 170px 70px 70px;gap:8px;padding:6px 10px;font-size:10px;font-weight:800;color:var(--txm);border-bottom:1px solid var(--brd)">
+  h+=`<div style="position:sticky;top:0;background:var(--bg);z-index:5;display:grid;grid-template-columns:28px 1fr 170px 70px 70px;gap:8px;padding:6px 10px;font-size:10px;font-weight:800;color:var(--txm);border-bottom:1px solid var(--brd);align-items:center">
+    <div style="text-align:center"><input type="checkbox" id="inv-select-all" onchange="invSelectAll(this.checked)" style="width:16px;height:16px;cursor:pointer" title="בחר הכל"></div>
     <div>פריט</div>
     <div style="text-align:center">כמות במלאי</div>
     <div style="text-align:center">יעד</div>
@@ -5689,7 +5698,9 @@ function vInv(m){
       const supplier=f.supplier||'';
       const sku=f.sku||'';
       const meta=(supplier||sku)?`<div style="font-size:9px;color:var(--txm);margin-top:1px">${supplier?`🏪 ${supplier}`:''}${supplier&&sku?' · ':''}${sku?`#${sku}`:''}</div>`:'';
-      h+=`<div style="display:grid;grid-template-columns:1fr 170px 70px 70px;gap:8px;align-items:center;padding:8px 10px;background:${rowBg};border-bottom:1px solid var(--brd);transition:background .15s" onmouseenter="this.style.background='var(--surf2)'" onmouseleave="this.style.background='${rowBg}'">
+      const isSelected=window._invSelected?.has(f.id);
+      h+=`<div style="display:grid;grid-template-columns:28px 1fr 170px 70px 70px;gap:8px;align-items:center;padding:8px 10px;background:${isSelected?'rgba(96,165,250,.08)':rowBg};border-bottom:1px solid var(--brd);transition:background .15s" onmouseenter="this.style.background='var(--surf2)'" onmouseleave="this.style.background='${isSelected?'rgba(96,165,250,.08)':rowBg}'">
+        <div style="text-align:center"><input type="checkbox" class="inv-row-check" ${isSelected?'checked':''} onclick="event.stopPropagation()" onchange="invToggleSelect('${f.id}',this.checked)" style="width:16px;height:16px;cursor:pointer"></div>
         <div style="display:flex;align-items:center;gap:4px;min-width:0">
           <div style="flex:1;min-width:0">
             <div style="font-size:13px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</div>
@@ -5772,10 +5783,13 @@ function invEditMat(id){
   const m=allMats.find(x=>x.id===id);
   if(!m) return;
   const isCustom=!!m._custom;
+  // סגור דיאלוגים קודמים של עריכה
+  document.querySelectorAll('.inv-edit-dialog').forEach(d=>d.remove());
   const dialog=document.createElement('div');
+  dialog.className='inv-edit-dialog';
   dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
   dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:380px;max-height:85vh;overflow:auto">
-    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:12px">✏️ עריכת פריט</div>
+    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:12px">✏️ עריכת פריט: ${m.name}</div>
     <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">שם המוצר ${isCustom?'':'<span style="color:#7a7a7a">(פריט מובנה - לא ניתן לשינוי)</span>'}</div><input id="em-name" value="${m.name.replace(/"/g,'&quot;')}" ${isCustom?'':'disabled'} style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
     <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">🏪 ספק</div><input id="em-supplier" value="${(m.supplier||'').replace(/"/g,'&quot;')}" placeholder="שם הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
     <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">#  מק"ט</div><input id="em-sku" value="${(m.sku||'').replace(/"/g,'&quot;')}" placeholder="SKU/מק״ט אצל הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
@@ -5786,12 +5800,16 @@ function invEditMat(id){
     ${isCustom?`<label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">קטגוריה</div><input id="em-cat" value="${(m.cat||'אחר').replace(/"/g,'&quot;')}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>`:''}
     <div style="display:flex;gap:6px">
       <button onclick="invSaveMatMeta('${id}')" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">💾 שמור</button>
-      <button onclick="this.closest('div[style*=fixed]').remove()" style="background:var(--surf2);border:1px solid var(--brd);color:var(--txd);padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">ביטול</button>
+      <button onclick="closeInvEditDialog()" style="background:var(--surf2);border:1px solid var(--brd);color:var(--txd);padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">ביטול</button>
     </div>
   </div>`;
   document.body.appendChild(dialog);
-  dialog.onclick=(e)=>{if(e.target===dialog)dialog.remove();};
+  dialog.onclick=(e)=>{if(e.target===dialog)closeInvEditDialog();};
   setTimeout(()=>document.getElementById('em-supplier')?.focus(),80);
+}
+
+function closeInvEditDialog(){
+  document.querySelectorAll('.inv-edit-dialog, .inv-bulk-dialog').forEach(d=>d.remove());
 }
 
 function invSaveMatMeta(id){
@@ -5818,9 +5836,134 @@ function invSaveMatMeta(id){
     custom.target=target;
   }
   sv();
-  document.querySelectorAll('div[style*="z-index:9500"]').forEach(d=>d.remove());
+  closeInvEditDialog();
   render();
   toast('✅ נשמר');
+}
+
+// ── עריכה מרובה ──
+function invToggleSelect(id,checked){
+  if(!window._invSelected) window._invSelected=new Set();
+  if(checked) window._invSelected.add(id);
+  else window._invSelected.delete(id);
+  _invUpdateBulkBar();
+}
+
+function invSelectAll(checked){
+  if(!window._invSelected) window._invSelected=new Set();
+  const allMats=typeof getAllMaterials==='function'?getAllMaterials():INV_MATERIALS;
+  if(checked){
+    allMats.forEach(m=>window._invSelected.add(m.id));
+  } else {
+    window._invSelected.clear();
+  }
+  // סמן את כל ה-checkboxes
+  document.querySelectorAll('.inv-row-check').forEach(c=>c.checked=checked);
+  _invUpdateBulkBar();
+}
+
+function _invUpdateBulkBar(){
+  const bar=document.getElementById('inv-bulk-bar');
+  const count=window._invSelected?.size||0;
+  const label=document.getElementById('inv-bulk-count');
+  if(bar) bar.style.display=count>0?'flex':'none';
+  if(label) label.textContent=count;
+}
+
+// פתח דיאלוג עריכה מרובה
+function invBulkEdit(){
+  const sel=window._invSelected;
+  if(!sel||!sel.size){toast('לא נבחרו פריטים');return;}
+  const allMats=typeof getAllMaterials==='function'?getAllMaterials():INV_MATERIALS;
+  const items=allMats.filter(m=>sel.has(m.id));
+  // זהה ערכים משותפים (אם כולם זהים - הצג; אחרת רק placeholder)
+  const common=(key)=>{
+    const first=items[0]?.[key];
+    return items.every(i=>i[key]===first)?first:'';
+  };
+  const commonSupplier=common('supplier')||'';
+  const commonSku=common('sku')||'';
+  const commonTarget=common('target');
+  const commonCat=common('cat')||'';
+  // האם לכולם סוג זהה (custom/builtin)?
+  const allCustom=items.every(i=>i._custom);
+  document.querySelectorAll('.inv-edit-dialog, .inv-bulk-dialog').forEach(d=>d.remove());
+  const dialog=document.createElement('div');
+  dialog.className='inv-bulk-dialog';
+  dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9500;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
+  // רשימת פריטים נבחרים (עד 10)
+  const previewNames=items.slice(0,10).map(i=>i.name).join(', ')+(items.length>10?`... (+${items.length-10})`:'');
+  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:420px;max-height:85vh;overflow:auto">
+    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:4px">✏️ עריכה מרובה (${items.length} פריטים)</div>
+    <div style="font-size:11px;color:var(--txm);margin-bottom:12px;max-height:60px;overflow:auto;background:var(--surf2);padding:6px 8px;border-radius:5px">${previewNames}</div>
+    <div style="font-size:10px;color:#fbbf24;background:#1a1408;border:1px solid #b45309;border-radius:6px;padding:6px 10px;margin-bottom:12px">💡 השאר שדה ריק כדי לא לשנות אותו. הערך הקיים ישמר.</div>
+
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <input type="checkbox" id="eb-supplier-on" ${commonSupplier?'checked':''} style="width:16px;height:16px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--txm)">🏪 ספק</div>
+        <input id="eb-supplier" value="${commonSupplier.replace(/"/g,'&quot;')}" placeholder="שם הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
+      </div>
+    </label>
+
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <input type="checkbox" id="eb-target-on" ${commonTarget!==''&&commonTarget!==undefined?'checked':''} style="width:16px;height:16px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--txm)">🎯 יעד (יוחל על כולם)</div>
+        <input id="eb-target" type="number" value="${commonTarget||''}" placeholder="מספר..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
+      </div>
+    </label>
+
+    ${allCustom?`<label style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+      <input type="checkbox" id="eb-cat-on" ${commonCat?'checked':''} style="width:16px;height:16px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:var(--txm)">📂 קטגוריה</div>
+        <input id="eb-cat" value="${commonCat.replace(/"/g,'&quot;')}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
+      </div>
+    </label>`:''}
+
+    <div style="font-size:10px;color:var(--txm);background:var(--surf2);padding:6px 10px;border-radius:5px;margin-bottom:12px">⚠️ מק"ט לא ניתן לעריכה מרובה (ייחודי לכל פריט)</div>
+
+    <div style="display:flex;gap:6px">
+      <button onclick="invBulkSave()" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">💾 שמור ל-${items.length} פריטים</button>
+      <button onclick="closeInvEditDialog()" style="background:var(--surf2);border:1px solid var(--brd);color:var(--txd);padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">ביטול</button>
+    </div>
+  </div>`;
+  document.body.appendChild(dialog);
+  dialog.onclick=(e)=>{if(e.target===dialog)closeInvEditDialog();};
+}
+
+function invBulkSave(){
+  const sel=window._invSelected;
+  if(!sel||!sel.size){closeInvEditDialog();return;}
+  const supplierOn=document.getElementById('eb-supplier-on')?.checked;
+  const targetOn=document.getElementById('eb-target-on')?.checked;
+  const catOn=document.getElementById('eb-cat-on')?.checked;
+  const supplier=(document.getElementById('eb-supplier')?.value||'').trim();
+  const targetVal=document.getElementById('eb-target')?.value;
+  const target=targetVal===''||targetVal==null?null:(parseInt(targetVal)||0);
+  const cat=(document.getElementById('eb-cat')?.value||'').trim();
+
+  if(!S._invMeta) S._invMeta={};
+  let updated=0;
+  sel.forEach(id=>{
+    if(!S._invMeta[id]) S._invMeta[id]={};
+    if(supplierOn){S._invMeta[id].supplier=supplier;}
+    if(targetOn&&target!==null){S._invMeta[id].target=target;}
+    // גם ב-custom אם קיים
+    const custom=(S.invMaterials||[]).find(m=>m.id===id);
+    if(custom){
+      if(supplierOn) custom.supplier=supplier;
+      if(targetOn&&target!==null) custom.target=target;
+      if(catOn) custom.cat=cat||custom.cat;
+    }
+    updated++;
+  });
+  sv();
+  window._invSelected=new Set();
+  closeInvEditDialog();
+  render();
+  toast(`✅ עודכנו ${updated} פריטים`);
 }
 
 // עדכון שורה בודדת (DOM-level, בלי re-render)
