@@ -5623,14 +5623,19 @@ function ensureWeeklyCountTask(){
 
 function vInv(m){
   if(!S.invState) S.invState={activeCard:null,extras:[],extraCounter:0};
+  if(S.plannedTanks===undefined) S.plannedTanks=0;
   const inv=S.invState;
+  const plannedTanks=S.plannedTanks||0;
   const allMats=typeof getAllMaterials==='function'?getAllMaterials():INV_MATERIALS;
   const ferts=allMats.map(mat=>{
     const stored=inv[mat.id]||{qty:null};
     const qty=stored.qty;
     const target=mat.target||0;
-    const deficit=target>0&&qty!==null?Math.max(0,target-qty):0;
-    return{id:mat.id,name:mat.name,target,unit:mat.unit||'יח׳',qty,deficit,cat:mat.cat||'כללי',_custom:mat._custom,supplier:mat.supplier||'',sku:mat.sku||''};
+    const perTank=mat.perTank||0;
+    const forecast=plannedTanks*perTank;  // צריכה צפויה עד להגעת הזמנה
+    const needed=target+forecast;  // סה"כ נדרש = יעד + צפי שימוש
+    const deficit=needed>0&&qty!==null?Math.max(0,Math.ceil(needed-qty)):0;
+    return{id:mat.id,name:mat.name,target,unit:mat.unit||'יח׳',qty,deficit,perTank,forecast,needed,cat:mat.cat||'כללי',_custom:mat._custom,supplier:mat.supplier||'',sku:mat.sku||''};
   });
 
   // סיכומים לשורת העל
@@ -5647,15 +5652,25 @@ function vInv(m){
   h+=`<div style="background:linear-gradient(135deg,#0d1a1e,#061612);border:1px solid #2e7048;border-radius:14px;padding:12px 14px;margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
       <div style="font-size:15px;font-weight:900;color:#fff">🛒 רשימת רכש אוטומטית</div>
-      <div style="font-size:11px;color:var(--txm)">דרישה = יעד − מה שיש</div>
+      <div style="font-size:11px;color:var(--txm)">${plannedTanks>0?`לקנות = יעד + ${plannedTanks} מיכלים − מלאי`:'דרישה = יעד − מה שיש'}</div>
+    </div>
+    <!-- מיכלי דישון מתוכננים -->
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;padding:8px 10px;background:#061018;border:1px solid var(--blu);border-radius:8px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:#a0c8f0;font-weight:800">🧪 מיכלי דישון עד להגעת ההזמנה</div>
+        <div style="font-size:9px;color:var(--txm);margin-top:1px">כל פריט שהגדרת לו "כמות למיכל" יתווסף לרשימת הקנייה</div>
+      </div>
+      <button onclick="invSetPlannedTanks(${Math.max(0,plannedTanks-1)})" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">−</button>
+      <input id="inv-planned-tanks" type="number" value="${plannedTanks}" onclick="this.select()" onchange="invSetPlannedTanks(this.value)" min="0" style="width:50px;height:28px;border-radius:6px;border:1px solid var(--blu);background:var(--bg);color:#a0c8f0;font-size:14px;font-weight:900;text-align:center;font-family:'Heebo',sans-serif">
+      <button onclick="invSetPlannedTanks(${plannedTanks+1})" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">+</button>
     </div>
     ${itemsToBuy>0
-      ?`<div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+      ?`<div style="display:flex;gap:12px;align-items:center;margin-top:10px">
           <div><div style="font-size:28px;font-weight:900;color:#fbbf24;line-height:1">${itemsToBuy}</div><div style="font-size:10px;color:var(--txm)">פריטים לקנות</div></div>
           <div style="width:1px;height:36px;background:var(--brd)"></div>
           <div style="flex:1"><button onclick="invShowShoppingList()" style="width:100%;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:10px;font-weight:900;font-size:13px;cursor:pointer;font-family:'Heebo',sans-serif">📋 הפק רשימה / 📧 שלח</button></div>
         </div>`
-      :`<div style="font-size:12px;color:#5ec98a;font-weight:700;margin-top:6px">✓ המלאי מלא — אין צורך לקנות${notCountedCount>0?` (${notCountedCount} טרם נספרו)`:''}</div>`
+      :`<div style="font-size:12px;color:#5ec98a;font-weight:700;margin-top:10px">✓ המלאי מלא — אין צורך לקנות${notCountedCount>0?` (${notCountedCount} טרם נספרו)`:''}</div>`
     }
   </div>`;
 
@@ -5694,10 +5709,12 @@ function vInv(m){
       const rowBg=f.deficit>0?'rgba(251,191,36,.05)':'var(--surf)';
       const editBtn=`<button onclick="event.stopPropagation();invEditMat('${f.id}')" title="פרטים (ספק/מק״ט)" style="background:transparent;border:none;color:#a0c8f0;cursor:pointer;font-size:14px;padding:0 4px">✏️</button>`;
       const removeBtn=f._custom?`<button onclick="event.stopPropagation();invRemoveCustomMat('${f.id}')" title="הסר פריט" style="background:transparent;border:none;color:#7a2020;cursor:pointer;font-size:14px;padding:0 4px">✕</button>`:'';
-      // סיכום ספק/מק"ט בשורה
+      // סיכום ספק/מק"ט + perTank בשורה
       const supplier=f.supplier||'';
       const sku=f.sku||'';
-      const meta=(supplier||sku)?`<div style="font-size:9px;color:var(--txm);margin-top:1px">${supplier?`🏪 ${supplier}`:''}${supplier&&sku?' · ':''}${sku?`#${sku}`:''}</div>`:'';
+      const perTankTxt=f.perTank>0?`<span style="color:#a0c8f0">🧪 ${f.perTank}${f.unit}/מיכל</span>`:'';
+      const forecastTxt=f.forecast>0?`<span style="color:#fbbf24;margin-right:4px">+${f.forecast} צפוי</span>`:'';
+      const meta=(supplier||sku||perTankTxt||forecastTxt)?`<div style="font-size:9px;color:var(--txm);margin-top:1px;display:flex;gap:4px;flex-wrap:wrap">${supplier?`<span>🏪 ${supplier}</span>`:''}${sku?`<span>#${sku}</span>`:''}${perTankTxt}${forecastTxt}</div>`:'';
       const isSelected=window._invSelected?.has(f.id);
       h+=`<div style="display:grid;grid-template-columns:28px 1fr 170px 70px 70px;gap:8px;align-items:center;padding:8px 10px;background:${isSelected?'rgba(96,165,250,.08)':rowBg};border-bottom:1px solid var(--brd);transition:background .15s" onmouseenter="this.style.background='var(--surf2)'" onmouseleave="this.style.background='${isSelected?'rgba(96,165,250,.08)':rowBg}'">
         <div style="text-align:center"><input type="checkbox" class="inv-row-check" ${isSelected?'checked':''} onclick="event.stopPropagation()" onchange="invToggleSelect('${f.id}',this.checked)" style="width:16px;height:16px;cursor:pointer"></div>
@@ -5761,6 +5778,15 @@ function invSetQtyDirect(id,val){
   _invUpdateHeader();
 }
 
+// עדכון מספר מיכלי דישון מתוכננים
+function invSetPlannedTanks(val){
+  const n=Math.max(0,parseInt(val)||0);
+  S.plannedTanks=n;
+  sv();
+  _invUpdateRow();
+  _invUpdateHeader();
+}
+
 // עדכון יעד (חוסר מתחשב בזה)
 function invSetTarget(id,val){
   const n=Math.max(0,parseInt(val)||0);
@@ -5793,10 +5819,11 @@ function invEditMat(id){
     <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">שם המוצר ${isCustom?'':'<span style="color:#7a7a7a">(פריט מובנה - לא ניתן לשינוי)</span>'}</div><input id="em-name" value="${m.name.replace(/"/g,'&quot;')}" ${isCustom?'':'disabled'} style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
     <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">🏪 ספק</div><input id="em-supplier" value="${(m.supplier||'').replace(/"/g,'&quot;')}" placeholder="שם הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
     <label style="display:block;margin-bottom:8px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">#  מק"ט</div><input id="em-sku" value="${(m.sku||'').replace(/"/g,'&quot;')}" placeholder="SKU/מק״ט אצל הספק..." style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <label><div style="font-size:11px;color:var(--txm);margin-bottom:3px">יחידה</div><input id="em-unit" value="${(m.unit||'יח׳').replace(/"/g,'&quot;')}" ${isCustom?'':'disabled'} style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
-      <label><div style="font-size:11px;color:var(--txm);margin-bottom:3px">יעד</div><input id="em-target" type="number" value="${m.target||0}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
+      <label><div style="font-size:11px;color:var(--txm);margin-bottom:3px">🎯 יעד</div><input id="em-target" type="number" value="${m.target||0}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>
     </div>
+    <label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:#a0c8f0;margin-bottom:3px">🧪 כמות למיכל דישון <span style="color:var(--txm);font-weight:400">(אופציונלי - לחישוב צפי)</span></div><input id="em-pertank" type="number" step="0.1" value="${m.perTank||0}" placeholder="0" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:#a0c8f0;font-size:13px;font-family:Heebo,sans-serif"></label>
     ${isCustom?`<label style="display:block;margin-bottom:12px"><div style="font-size:11px;color:var(--txm);margin-bottom:3px">קטגוריה</div><input id="em-cat" value="${(m.cat||'אחר').replace(/"/g,'&quot;')}" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:Heebo,sans-serif"></label>`:''}
     <div style="display:flex;gap:6px">
       <button onclick="invSaveMatMeta('${id}')" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">💾 שמור</button>
@@ -5816,6 +5843,7 @@ function invSaveMatMeta(id){
   const supplier=(document.getElementById('em-supplier')?.value||'').trim();
   const sku=(document.getElementById('em-sku')?.value||'').trim();
   const target=parseInt(document.getElementById('em-target')?.value)||0;
+  const perTank=parseFloat(document.getElementById('em-pertank')?.value)||0;
   const nameEl=document.getElementById('em-name');
   const unitEl=document.getElementById('em-unit');
   const catEl=document.getElementById('em-cat');
@@ -5825,6 +5853,7 @@ function invSaveMatMeta(id){
   S._invMeta[id].supplier=supplier;
   S._invMeta[id].sku=sku;
   S._invMeta[id].target=target;
+  S._invMeta[id].perTank=perTank;
   // אם פריט מותאם - עדכן גם ישירות
   const custom=(S.invMaterials||[]).find(m=>m.id===id);
   if(custom){
@@ -5834,6 +5863,7 @@ function invSaveMatMeta(id){
     custom.supplier=supplier;
     custom.sku=sku;
     custom.target=target;
+    custom.perTank=perTank;
   }
   sv();
   closeInvEditDialog();
@@ -5885,6 +5915,7 @@ function invBulkEdit(){
   const commonSku=common('sku')||'';
   const commonTarget=common('target');
   const commonCat=common('cat')||'';
+  const commonPerTank=common('perTank');
   // האם לכולם סוג זהה (custom/builtin)?
   const allCustom=items.every(i=>i._custom);
   document.querySelectorAll('.inv-edit-dialog, .inv-bulk-dialog').forEach(d=>d.remove());
@@ -5914,6 +5945,14 @@ function invBulkEdit(){
       </div>
     </label>
 
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <input type="checkbox" id="eb-pertank-on" ${commonPerTank!==''&&commonPerTank!==undefined?'checked':''} style="width:16px;height:16px">
+      <div style="flex:1">
+        <div style="font-size:11px;color:#a0c8f0">🧪 כמות למיכל דישון</div>
+        <input id="eb-pertank" type="number" step="0.1" value="${commonPerTank||''}" placeholder="כמות ליחידת מיכל..." oninput="document.getElementById('eb-pertank-on').checked=true" style="width:100%;padding:7px;border-radius:6px;border:1px solid var(--brd);background:var(--bg);color:#a0c8f0;font-size:13px;font-family:Heebo,sans-serif;margin-top:2px">
+      </div>
+    </label>
+
     ${allCustom?`<label style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
       <input type="checkbox" id="eb-cat-on" ${commonCat?'checked':''} style="width:16px;height:16px">
       <div style="flex:1">
@@ -5939,10 +5978,13 @@ function invBulkSave(){
   if(!sel||!sel.size){closeInvEditDialog();return;}
   const supplierOn=document.getElementById('eb-supplier-on')?.checked;
   const targetOn=document.getElementById('eb-target-on')?.checked;
+  const perTankOn=document.getElementById('eb-pertank-on')?.checked;
   const catOn=document.getElementById('eb-cat-on')?.checked;
   const supplier=(document.getElementById('eb-supplier')?.value||'').trim();
   const targetVal=document.getElementById('eb-target')?.value;
   const target=targetVal===''||targetVal==null?null:(parseInt(targetVal)||0);
+  const perTankVal=document.getElementById('eb-pertank')?.value;
+  const perTank=perTankVal===''||perTankVal==null?null:(parseFloat(perTankVal)||0);
   const cat=(document.getElementById('eb-cat')?.value||'').trim();
 
   if(!S._invMeta) S._invMeta={};
@@ -5951,11 +5993,13 @@ function invBulkSave(){
     if(!S._invMeta[id]) S._invMeta[id]={};
     if(supplierOn){S._invMeta[id].supplier=supplier;}
     if(targetOn&&target!==null){S._invMeta[id].target=target;}
+    if(perTankOn&&perTank!==null){S._invMeta[id].perTank=perTank;}
     // גם ב-custom אם קיים
     const custom=(S.invMaterials||[]).find(m=>m.id===id);
     if(custom){
       if(supplierOn) custom.supplier=supplier;
       if(targetOn&&target!==null) custom.target=target;
+      if(perTankOn&&perTank!==null) custom.perTank=perTank;
       if(catOn) custom.cat=cat||custom.cat;
     }
     updated++;
@@ -6001,11 +6045,15 @@ function invRemoveCustomMat(id){
 function invShowShoppingList(){
   const allMats=typeof getAllMaterials==='function'?getAllMaterials():INV_MATERIALS;
   const inv=S.invState||{};
+  const plannedTanks=S.plannedTanks||0;
   const items=allMats.map(mat=>{
     const qty=inv[mat.id]?.qty;
     const target=mat.target||0;
-    if(qty===null||qty===undefined||target<=0) return null;
-    const deficit=target-qty;
+    const perTank=mat.perTank||0;
+    const forecast=plannedTanks*perTank;
+    const needed=target+forecast;
+    if(qty===null||qty===undefined||needed<=0) return null;
+    const deficit=needed-qty;
     if(deficit<=0) return null;
     return {
       name:mat.name,
@@ -6013,7 +6061,8 @@ function invShowShoppingList(){
       unit:mat.unit||'יח׳',
       cat:mat.cat||'כללי',
       supplier:mat.supplier||'',
-      sku:mat.sku||''
+      sku:mat.sku||'',
+      target,forecast,perTank
     };
   }).filter(Boolean);
   if(!items.length){toast('אין פריטים לקניה');return;}
@@ -6044,10 +6093,12 @@ function invShowShoppingList(){
       <div style="font-size:10px;color:var(--txm)">${supItems.length} פריטים</div>
     </div>`;
     supItems.forEach(i=>{
+      const breakdown=i.forecast>0?`<div style="font-size:9px;color:#a0c8f0">יעד ${i.target} + צפוי ${i.forecast} (${plannedTanks}×${i.perTank})</div>`:'';
       listHtml+=`<div style="display:grid;grid-template-columns:1fr auto;gap:8px;padding:6px 10px;background:var(--surf2);border-radius:5px;margin-bottom:3px;align-items:center">
         <div>
           <div style="font-weight:700;font-size:13px">${i.name}</div>
           ${i.sku?`<div style="font-size:10px;color:var(--txm);font-family:monospace">מק״ט: ${i.sku}</div>`:''}
+          ${breakdown}
         </div>
         <div style="color:#fbbf24;font-weight:900;font-size:14px;white-space:nowrap">${i.amount} ${i.unit}</div>
       </div>`;
@@ -6055,7 +6106,8 @@ function invShowShoppingList(){
   });
 
   // הכן טקסט לshare — מקובץ לפי ספק עם מק"ט
-  const textLines=['רשימת רכש — '+new Date().toLocaleDateString('he-IL'),''];
+  const headerNote=plannedTanks>0?' (כולל צפי ל-'+plannedTanks+' מיכלי דישון)':'';
+  const textLines=['רשימת רכש — '+new Date().toLocaleDateString('he-IL')+headerNote,''];
   suppliers.forEach(sup=>{
     textLines.push('═ 🏪 '+sup+' ═');
     grouped[sup].forEach(i=>{
@@ -11040,11 +11092,12 @@ function getAllMaterials(){
   const meta=S._invMeta||{};
   const applyMeta=(m)=>{
     const mt=meta[m.id];
-    if(!mt) return m;
+    if(!mt) return {...m,perTank:m.perTank||0};
     return {...m,
       target:mt.target!==undefined?mt.target:m.target,
       supplier:mt.supplier!==undefined?mt.supplier:(m.supplier||''),
       sku:mt.sku!==undefined?mt.sku:(m.sku||''),
+      perTank:mt.perTank!==undefined?mt.perTank:(m.perTank||0),
     };
   };
   // תאימות לאחור ל-S._invTargets (רק target)
