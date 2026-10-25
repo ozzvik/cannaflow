@@ -6210,6 +6210,8 @@ function invOpenSendDialog(){
 
     <div style="font-size:9px;color:var(--txm);background:var(--surf2);padding:6px 8px;border-radius:5px;margin-bottom:10px">💡 טיפ: לחיצה על "שלח מייל" פותחת את תוכנת המייל שלך עם התוכן ממולא. ב-WhatsApp - נפתח צ'אט מוכן למשלוח.</div>
 
+    <button onclick="invEditMsgTemplate()" style="width:100%;background:#1a1408;color:#fbbf24;border:1px solid #b45309;padding:9px;border-radius:7px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px;margin-bottom:6px">⚙️ ערוך תבנית הודעה (לכל ספק)</button>
+
     <button onclick="document.querySelectorAll('.shop-send-dialog').forEach(d=>d.remove())" style="width:100%;background:var(--surf2);color:var(--txd);border:1px solid var(--brd);padding:9px;border-radius:7px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">סגור</button>
   </div>`;
   document.body.appendChild(dialog);
@@ -6230,19 +6232,116 @@ function invEditSupplierContact(sup){
   invOpenSendDialog();
 }
 
-// בניית טקסט לספק יחיד
+// תבנית ברירת מחדל
+const PURCH_MSG_DEFAULT=`שלום,
+
+רשימת רכש מ-{SUPPLIER} — {DATE} {TANKS_NOTE}
+
+{ITEMS}
+
+סה״כ {COUNT} פריטים.
+
+תודה.`;
+
+// בניית טקסט לספק יחיד — לפי התבנית בהגדרות
 function _invSupplierText(sup){
   const grouped=window._shoppingListGrouped||{};
   const items=grouped[sup]||[];
   const plannedTanks=window._shoppingListPlannedTanks||0;
-  const headerNote=plannedTanks>0?' (כולל צפי ל-'+plannedTanks+' מיכלי דישון)':'';
-  const lines=['רשימת רכש מ-'+sup+' — '+new Date().toLocaleDateString('he-IL')+headerNote,''];
-  items.forEach(i=>{
+  const tanksNote=plannedTanks>0?'(כולל צפי ל-'+plannedTanks+' מיכלי דישון)':'';
+  const itemLines=items.map(i=>{
     const skuTxt=i.sku?` [מק״ט: ${i.sku}]`:'';
-    lines.push('• '+i.name+' — '+i.amount+' '+i.unit+skuTxt);
-  });
-  lines.push('','תודה.');
-  return lines.join('\n');
+    return '• '+i.name+' — '+i.amount+' '+i.unit+skuTxt;
+  }).join('\n');
+  const tmpl=S.purchMsgTemplate||PURCH_MSG_DEFAULT;
+  return tmpl
+    .replace(/{SUPPLIER}/g,sup)
+    .replace(/{DATE}/g,new Date().toLocaleDateString('he-IL'))
+    .replace(/{TANKS_NOTE}/g,tanksNote)
+    .replace(/{ITEMS}/g,itemLines)
+    .replace(/{COUNT}/g,String(items.length));
+}
+
+// עריכת תבנית ההודעה
+function invEditMsgTemplate(){
+  document.querySelectorAll('.msg-tmpl-dialog').forEach(d=>d.remove());
+  const dialog=document.createElement('div');
+  dialog.className='msg-tmpl-dialog';
+  dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9800;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
+  const cur=S.purchMsgTemplate||PURCH_MSG_DEFAULT;
+  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:520px;max-height:92vh;overflow:auto">
+    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:4px">⚙️ עריכת תבנית הודעה</div>
+    <div style="font-size:11px;color:var(--txm);margin-bottom:10px">התבנית משמשת להודעות שנשלחות לכל ספק (אימייל + WhatsApp)</div>
+
+    <div style="background:#0d1a38;border:1px solid var(--blu);border-radius:7px;padding:8px 10px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:800;color:#a0c8f0;margin-bottom:4px">📎 פלייסהולדרים זמינים:</div>
+      <div style="font-size:11px;color:var(--txd);line-height:1.6">
+        <code style="background:#061018;padding:1px 5px;border-radius:3px;color:#5ec98a">{SUPPLIER}</code> — שם הספק<br>
+        <code style="background:#061018;padding:1px 5px;border-radius:3px;color:#5ec98a">{DATE}</code> — תאריך היום<br>
+        <code style="background:#061018;padding:1px 5px;border-radius:3px;color:#5ec98a">{ITEMS}</code> — רשימת הפריטים (שורה לכל אחד)<br>
+        <code style="background:#061018;padding:1px 5px;border-radius:3px;color:#5ec98a">{TANKS_NOTE}</code> — הערת מיכלי דישון (אם יש)<br>
+        <code style="background:#061018;padding:1px 5px;border-radius:3px;color:#5ec98a">{COUNT}</code> — מספר הפריטים
+      </div>
+    </div>
+
+    <label style="display:block;margin-bottom:10px">
+      <div style="font-size:11px;color:var(--txm);margin-bottom:3px">תוכן ההודעה:</div>
+      <textarea id="pmt-text" style="width:100%;min-height:220px;padding:10px;border-radius:7px;border:1px solid var(--brd);background:var(--bg);color:var(--tx);font-size:13px;font-family:'Heebo',sans-serif;line-height:1.5;resize:vertical;direction:rtl">${cur.replace(/</g,'&lt;')}</textarea>
+    </label>
+
+    <div style="font-size:10px;color:var(--txm);background:var(--surf2);padding:6px 8px;border-radius:5px;margin-bottom:10px">💡 טיפ: לחץ "תצוגה מקדימה" לראות איך ייראה הפלט לפני השמירה.</div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <button onclick="invPreviewMsgTemplate()" style="background:#0d1a38;color:#a0c8f0;border:1px solid var(--blu);padding:9px;border-radius:7px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">👁️ תצוגה מקדימה</button>
+      <button onclick="invResetMsgTemplate()" style="background:var(--surf2);color:var(--txd);border:1px solid var(--brd);padding:9px;border-radius:7px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">↺ ברירת מחדל</button>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button onclick="invSaveMsgTemplate()" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">💾 שמור תבנית</button>
+      <button onclick="document.querySelectorAll('.msg-tmpl-dialog').forEach(d=>d.remove())" style="background:var(--surf2);color:var(--txd);border:1px solid var(--brd);padding:10px 16px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px">ביטול</button>
+    </div>
+  </div>`;
+  document.body.appendChild(dialog);
+  dialog.onclick=(e)=>{if(e.target===dialog)dialog.remove();};
+}
+
+function invSaveMsgTemplate(){
+  const txt=document.getElementById('pmt-text')?.value||'';
+  S.purchMsgTemplate=txt.trim()||PURCH_MSG_DEFAULT;
+  sv();
+  document.querySelectorAll('.msg-tmpl-dialog').forEach(d=>d.remove());
+  toast('✅ התבנית נשמרה');
+}
+
+function invResetMsgTemplate(){
+  if(!confirm('לאפס לברירת מחדל?')) return;
+  const ta=document.getElementById('pmt-text');
+  if(ta) ta.value=PURCH_MSG_DEFAULT;
+}
+
+function invPreviewMsgTemplate(){
+  const txt=document.getElementById('pmt-text')?.value||'';
+  // הפעל זמנית
+  const orig=S.purchMsgTemplate;
+  S.purchMsgTemplate=txt;
+  // דגימה - קח ספק אחד מתוך הרשימה הנוכחית, או דמה
+  const suppliers=window._shoppingListSuppliers||[];
+  const sampleSup=suppliers.find(s=>s!=='ללא ספק')||'דוגמה ספק';
+  let preview;
+  if(window._shoppingListGrouped&&window._shoppingListGrouped[sampleSup]){
+    preview=_invSupplierText(sampleSup);
+  } else {
+    // דמה
+    const old=window._shoppingListGrouped;
+    window._shoppingListGrouped={[sampleSup]:[
+      {name:'דוגמה: Haifa Cal GG',amount:50,unit:'ק״ג',sku:'HCG-50'},
+      {name:'דוגמה: GrowClean',amount:10,unit:'ק״ג',sku:''}
+    ]};
+    window._shoppingListPlannedTanks=2;
+    preview=_invSupplierText(sampleSup);
+    window._shoppingListGrouped=old;
+  }
+  S.purchMsgTemplate=orig;
+  alert('תצוגה מקדימה:\n\n'+preview);
 }
 
 // שלח מייל לספק יחיד (mailto עם ייעוד)
