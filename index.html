@@ -6294,17 +6294,31 @@ async function invSendBulkEmail(){
     if(!c.email) noEmail.push(sup);
     else ready.push(sup);
   });
-  let msg=`✉️ ייפתחו ${ready.length} חלונות מייל`;
-  if(noEmail.length) msg+=`\n⚠️ ללא אימייל (ידולג): ${noEmail.join(', ')}`;
-  msg+='\n\nלהמשיך?';
-  if(!confirm(msg)) return;
+  if(!ready.length){alert('⚠️ אין לאף אחד מהנבחרים אימייל');return;}
+  // בחר שיטה אחת לכולם
+  const noEmailMsg=noEmail.length?`\n⚠️ ללא אימייל (ידולג): ${noEmail.join(', ')}`:'';
+  const choice=prompt(`✉️ ייפתחו ${ready.length} חלונות מייל (אחד לכל ספק)${noEmailMsg}\n\nבחר שיטה:\n1 = Gmail Web  (מומלץ)\n2 = Outlook Web\n3 = תוכנת מייל (mailto)\n\nהקלד 1/2/3:`,'1');
+  if(!choice) return;
+  const method=choice==='2'?'outlook':choice==='3'?'mailto':'gmail';
   for(let i=0;i<ready.length;i++){
     const sup=ready[i];
-    invSendSupplierEmail(sup);
-    // המתן קצת בין פתיחות (למנוע חסימת popup)
-    if(i<ready.length-1) await new Promise(r=>setTimeout(r,800));
+    const contact=(S.supplierContacts||{})[sup]||{};
+    const text=_invSupplierText(sup);
+    const subject='רשימת רכש בסדר — '+sup+' — '+new Date().toLocaleDateString('he-IL');
+    _invOpenMailDirect(method,contact.email,subject,text);
+    if(i<ready.length-1) await new Promise(r=>setTimeout(r,900));
   }
-  toast(`✅ נפתחו ${ready.length} מיילים`);
+  toast(`✅ נפתחו ${ready.length} חלונות`);
+}
+
+// פתיחה ישירה (ללא דיאלוג) - למשימה מרוכזת
+function _invOpenMailDirect(method,to,subject,body){
+  let url;
+  if(method==='gmail') url=`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  else if(method==='outlook') url=`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(to)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  else url=`mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  if(method==='mailto') window.location.href=url;
+  else window.open(url,'_blank');
 }
 
 // שליחה מרוכזת ל-WhatsApp
@@ -6466,7 +6480,41 @@ function invSendSupplierEmail(sup){
   }
   const text=_invSupplierText(sup);
   const subject='רשימת רכש בסדר — '+sup+' — '+new Date().toLocaleDateString('he-IL');
-  window.location.href=`mailto:${contact.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+  _invOpenMailPicker(contact.email,subject,text);
+}
+
+// דיאלוג "איך לפתוח מייל?" - Gmail web / mailto / העתק
+function _invOpenMailPicker(toEmail,subject,body){
+  // העתק אוטומטית ללוח (fallback שתמיד זמין)
+  if(navigator.clipboard){
+    try{navigator.clipboard.writeText(body);}catch(e){}
+  }
+  // סגור דיאלוגים קודמים
+  document.querySelectorAll('.mail-picker-dialog').forEach(d=>d.remove());
+  const esc=(s)=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const gmailUrl=`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const mailtoUrl=`mailto:${encodeURIComponent(toEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const outlookUrl=`https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(toEmail)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const dialog=document.createElement('div');
+  dialog.className='mail-picker-dialog';
+  dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:9800;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
+  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:400px">
+    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:4px">📧 שליחה אל</div>
+    <div style="font-size:12px;color:#a0c8f0;font-weight:800;margin-bottom:12px">${esc(toEmail)}</div>
+    <div style="font-size:10px;color:#5ec98a;background:#091a10;border:1px solid #2e7048;padding:6px 10px;border-radius:5px;margin-bottom:10px">✓ התוכן הועתק ללוח — אפשר להדביק (Ctrl+V) בכל מקום</div>
+
+    <a href="${gmailUrl}" target="_blank" rel="noopener" onclick="setTimeout(()=>document.querySelectorAll('.mail-picker-dialog').forEach(d=>d.remove()),100)" style="display:block;background:#ea4335;color:#fff;border:none;padding:11px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px;margin-bottom:6px;text-align:center;text-decoration:none">📬 פתח ב-Gmail Web</a>
+
+    <a href="${outlookUrl}" target="_blank" rel="noopener" onclick="setTimeout(()=>document.querySelectorAll('.mail-picker-dialog').forEach(d=>d.remove()),100)" style="display:block;background:#0078d4;color:#fff;border:none;padding:11px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px;margin-bottom:6px;text-align:center;text-decoration:none">📨 פתח ב-Outlook Web</a>
+
+    <a href="${mailtoUrl}" onclick="setTimeout(()=>document.querySelectorAll('.mail-picker-dialog').forEach(d=>d.remove()),100)" style="display:block;background:var(--surf2);color:var(--txd);border:1px solid var(--brd);padding:11px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:13px;margin-bottom:6px;text-align:center;text-decoration:none">💌 תוכנת מייל ברירת מחדל (mailto)</a>
+
+    <div style="font-size:10px;color:var(--txm);background:var(--surf2);padding:6px 10px;border-radius:5px;margin:10px 0">💡 אם Gmail/Outlook פתוחים כבר במחשב - הקומפוזר ייפתח ישירות עם הפרטים ממולאים</div>
+
+    <button onclick="document.querySelectorAll('.mail-picker-dialog').forEach(d=>d.remove())" style="width:100%;background:var(--surf2);color:var(--txd);border:1px solid var(--brd);padding:9px;border-radius:7px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">סגור</button>
+  </div>`;
+  document.body.appendChild(dialog);
+  dialog.onclick=(e)=>{if(e.target===dialog)dialog.remove();};
 }
 
 // שלח WhatsApp לספק יחיד
