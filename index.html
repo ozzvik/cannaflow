@@ -1329,9 +1329,10 @@ function render(){
   if(!m) return;
   m.style.cssText='flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;';
 
-  // שמור מיקום גלילה לפני רנדר
+  // שמור מיקום גלילה לפני רנדר (גם אופקי וגם אנכי)
   const gsEl=document.getElementById('gs');
-  const savedScroll=gsEl?gsEl.scrollLeft:0;
+  const savedScrollLeft=gsEl?gsEl.scrollLeft:null;
+  const savedScrollTop=gsEl?gsEl.scrollTop:null;
   const wasGantt=S.view==='gantt';
 
   if(S.view==='gantt'){if(fab)fab.style.display='none';vGantt(m);}
@@ -1342,14 +1343,18 @@ function render(){
   else if(S.view==='presence'){if(fab)fab.style.display='none';vPresence(m);}
   else{if(fab)fab.style.display='block';vRooms(m);}
 
-  // שחזר מיקום גלילה אחרי רנדר (מיידית + setTimeout כי DOM עדיין נבנה)
-  if(wasGantt&&savedScroll>0){
-    const gsNew=document.getElementById('gs');
-    if(gsNew){
-      gsNew.scrollLeft=savedScroll;
-      // גיבוי - שוב אחרי rAF
-      requestAnimationFrame(()=>{const g=document.getElementById('gs');if(g)g.scrollLeft=savedScroll;});
-    }
+  // שחזר מיקום גלילה (גם אופקי וגם אנכי) - שלוש פעימות כי ה-DOM נבנה בשלבים
+  if(wasGantt&&(savedScrollLeft!==null||savedScrollTop!==null)){
+    const restoreScroll=()=>{
+      const g=document.getElementById('gs');
+      if(!g) return;
+      if(savedScrollLeft!==null) g.scrollLeft=savedScrollLeft;
+      if(savedScrollTop!==null) g.scrollTop=savedScrollTop;
+    };
+    restoreScroll();  // מיידי
+    requestAnimationFrame(()=>{restoreScroll();  // אחרי paint
+      requestAnimationFrame(restoreScroll);  // גיבוי - עוד פריים
+    });
   }
 
   updateInboxBadge();
