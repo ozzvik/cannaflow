@@ -6123,6 +6123,7 @@ function invShowShoppingList(){
   });
   const fullText=textLines.join('\n');
 
+  dialog.className='shop-list-dialog';
   dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:460px;max-height:85vh;overflow:auto">
     <div style="display:flex;justify-content:space-between;align-items:baseline">
       <div style="font-size:15px;font-weight:900;color:var(--tx)">🛒 רשימת רכש (${items.length})</div>
@@ -6131,16 +6132,184 @@ function invShowShoppingList(){
     <div style="font-size:11px;color:var(--txm);margin-bottom:4px">${new Date().toLocaleDateString('he-IL')}</div>
     <div style="max-height:50vh;overflow:auto;margin-bottom:12px">${listHtml}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      <button onclick="invSendEmail()" style="flex:1;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📧 אימייל</button>
+      <button onclick="invOpenSendDialog()" style="flex:2;background:#5ec98a;color:#0d1a38;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📤 שליחה</button>
       <button onclick="invCopyToClipboard()" style="flex:1;background:#0d1a38;color:#a0c8f0;border:1px solid var(--blu);padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📋 העתק</button>
-      <button onclick="invShareWhatsapp()" style="flex:1;background:#128c7e;color:#fff;border:none;padding:10px;border-radius:8px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">💬 וואטסאפ</button>
-      <button onclick="this.closest('div[style*=fixed]').remove()" style="background:var(--surf2);border:1px solid var(--brd);color:var(--txd);padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">סגור</button>
+      <button onclick="document.querySelectorAll('.shop-list-dialog, .shop-send-dialog').forEach(d=>d.remove())" style="background:var(--surf2);border:1px solid var(--brd);color:var(--txd);padding:10px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">סגור</button>
     </div>
     <textarea id="_sl-text" style="position:absolute;left:-9999px">${fullText}</textarea>
   </div>`;
   document.body.appendChild(dialog);
-  dialog.onclick=(e)=>{if(e.target===dialog)dialog.remove();};
+  dialog.onclick=(e)=>{if(e.target===dialog){document.querySelectorAll('.shop-list-dialog, .shop-send-dialog').forEach(d=>d.remove());}};
   window._shoppingListText=fullText;
+  window._shoppingListGrouped=grouped;
+  window._shoppingListSuppliers=suppliers;
+  window._shoppingListPlannedTanks=plannedTanks;
+}
+
+// דיאלוג שליחה חכמה - לכל ספק בנפרד + כללי
+function invOpenSendDialog(){
+  const grouped=window._shoppingListGrouped||{};
+  const suppliers=window._shoppingListSuppliers||[];
+  const plannedTanks=window._shoppingListPlannedTanks||0;
+  if(!S.supplierContacts) S.supplierContacts={};
+  // סגור קיים
+  document.querySelectorAll('.shop-send-dialog').forEach(d=>d.remove());
+  const dialog=document.createElement('div');
+  dialog.className='shop-send-dialog';
+  dialog.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9700;display:flex;align-items:center;justify-content:center;padding:16px;font-family:Heebo,sans-serif';
+
+  let supHtml='';
+  suppliers.forEach(sup=>{
+    if(sup==='ללא ספק') return;
+    const contact=S.supplierContacts[sup]||{};
+    const items=grouped[sup]||[];
+    const hasEmail=!!contact.email;
+    const hasPhone=!!contact.phone;
+    supHtml+=`<div style="background:var(--surf2);border:1px solid var(--brd);border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-weight:900;color:#a0c8f0;font-size:13px">🏪 ${sup}</div>
+        <div style="font-size:10px;color:var(--txm)">${items.length} פריטים</div>
+      </div>
+      <div style="font-size:9px;color:var(--txm);margin-bottom:6px">${hasEmail?`📧 ${contact.email}`:'📧 אין אימייל'} ${hasPhone?`· 📱 ${contact.phone}`:'· 📱 אין טלפון'} <button onclick="invEditSupplierContact('${sup.replace(/'/g,"\\'")}')" style="background:transparent;border:none;color:#a0c8f0;cursor:pointer;font-size:11px;padding:0 4px">✏️</button></div>
+      <div style="display:flex;gap:4px">
+        <button onclick="invSendSupplierEmail('${sup.replace(/'/g,"\\'")}')" style="flex:1;background:${hasEmail?'#5ec98a':'#2a3d4a'};color:${hasEmail?'#0d1a38':'#a0c8f0'};border:none;padding:7px;border-radius:6px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:11px">📧 ${hasEmail?'שלח מייל':'הוסף אימייל'}</button>
+        <button onclick="invSendSupplierWhatsapp('${sup.replace(/'/g,"\\'")}')" style="flex:1;background:${hasPhone?'#128c7e':'#2a3d4a'};color:#fff;border:none;padding:7px;border-radius:6px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:11px">💬 ${hasPhone?'שלח WhatsApp':'הוסף טלפון'}</button>
+      </div>
+    </div>`;
+  });
+
+  // ללא ספק
+  if(grouped['ללא ספק']){
+    const items=grouped['ללא ספק']||[];
+    supHtml+=`<div style="background:#2a1a1a;border:1px solid #7a2020;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div style="font-weight:900;color:#f08080;font-size:13px">⚠️ פריטים ללא ספק</div>
+        <div style="font-size:10px;color:var(--txm)">${items.length} פריטים</div>
+      </div>
+      <div style="font-size:10px;color:var(--txm)">הגדר ספק לפריטים האלה כדי לשלוח אותם ישירות</div>
+    </div>`;
+  }
+
+  dialog.innerHTML=`<div onclick="event.stopPropagation()" style="background:var(--surf);border:1px solid var(--brd);border-radius:12px;padding:16px;width:100%;max-width:460px;max-height:90vh;overflow:auto">
+    <div style="font-size:15px;font-weight:900;color:var(--tx);margin-bottom:4px">📤 שליחת רשימת רכש</div>
+    <div style="font-size:11px;color:var(--txm);margin-bottom:12px">בחר ספק לשליחה ייעודית, או שלח את כל הרשימה</div>
+
+    <div style="font-size:11px;font-weight:800;color:var(--txd);margin-bottom:6px">📋 לפי ספק:</div>
+    ${supHtml||'<div style="font-size:11px;color:var(--txm);padding:8px">אין ספקים מוגדרים</div>'}
+
+    <div style="height:1px;background:var(--brd);margin:12px 0"></div>
+    <div style="font-size:11px;font-weight:800;color:var(--txd);margin-bottom:6px">🌐 כללי (כל הרשימה):</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <button onclick="invSendEmail()" style="background:#5ec98a;color:#0d1a38;border:none;padding:9px;border-radius:7px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📧 פתח אימייל</button>
+      <button onclick="invShareWhatsapp()" style="background:#128c7e;color:#fff;border:none;padding:9px;border-radius:7px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">💬 WhatsApp</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+      <button onclick="invPrintShoppingList()" style="background:#0d1a38;color:#a0c8f0;border:1px solid var(--blu);padding:9px;border-radius:7px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">🖨️ הדפס / PDF</button>
+      <button onclick="invCopyToClipboard()" style="background:var(--surf2);color:var(--txd);border:1px solid var(--brd);padding:9px;border-radius:7px;font-weight:800;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">📋 העתק הכל</button>
+    </div>
+
+    <div style="font-size:9px;color:var(--txm);background:var(--surf2);padding:6px 8px;border-radius:5px;margin-bottom:10px">💡 טיפ: לחיצה על "שלח מייל" פותחת את תוכנת המייל שלך עם התוכן ממולא. ב-WhatsApp - נפתח צ'אט מוכן למשלוח.</div>
+
+    <button onclick="document.querySelectorAll('.shop-send-dialog').forEach(d=>d.remove())" style="width:100%;background:var(--surf2);color:var(--txd);border:1px solid var(--brd);padding:9px;border-radius:7px;font-weight:700;cursor:pointer;font-family:Heebo,sans-serif;font-size:12px">סגור</button>
+  </div>`;
+  document.body.appendChild(dialog);
+  dialog.onclick=(e)=>{if(e.target===dialog)dialog.remove();};
+}
+
+// עריכת פרטי קשר של ספק
+function invEditSupplierContact(sup){
+  if(!S.supplierContacts) S.supplierContacts={};
+  const cur=S.supplierContacts[sup]||{};
+  const email=prompt(`אימייל של ${sup}:`,cur.email||'')||'';
+  const phone=prompt(`טלפון של ${sup} (עם קידומת, למשל 972501234567):`,cur.phone||'')||'';
+  S.supplierContacts[sup]={email:email.trim(),phone:phone.trim().replace(/[^\d+]/g,'')};
+  sv();
+  toast('✅ נשמר');
+  // רענן דיאלוג
+  document.querySelectorAll('.shop-send-dialog').forEach(d=>d.remove());
+  invOpenSendDialog();
+}
+
+// בניית טקסט לספק יחיד
+function _invSupplierText(sup){
+  const grouped=window._shoppingListGrouped||{};
+  const items=grouped[sup]||[];
+  const plannedTanks=window._shoppingListPlannedTanks||0;
+  const headerNote=plannedTanks>0?' (כולל צפי ל-'+plannedTanks+' מיכלי דישון)':'';
+  const lines=['רשימת רכש מ-'+sup+' — '+new Date().toLocaleDateString('he-IL')+headerNote,''];
+  items.forEach(i=>{
+    const skuTxt=i.sku?` [מק״ט: ${i.sku}]`:'';
+    lines.push('• '+i.name+' — '+i.amount+' '+i.unit+skuTxt);
+  });
+  lines.push('','תודה.');
+  return lines.join('\n');
+}
+
+// שלח מייל לספק יחיד (mailto עם ייעוד)
+function invSendSupplierEmail(sup){
+  if(!S.supplierContacts) S.supplierContacts={};
+  const contact=S.supplierContacts[sup]||{};
+  if(!contact.email){
+    invEditSupplierContact(sup);
+    return;
+  }
+  const text=_invSupplierText(sup);
+  const subject='רשימת רכש בסדר — '+sup+' — '+new Date().toLocaleDateString('he-IL');
+  window.location.href=`mailto:${contact.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+}
+
+// שלח WhatsApp לספק יחיד
+function invSendSupplierWhatsapp(sup){
+  if(!S.supplierContacts) S.supplierContacts={};
+  const contact=S.supplierContacts[sup]||{};
+  if(!contact.phone){
+    invEditSupplierContact(sup);
+    return;
+  }
+  const text=_invSupplierText(sup);
+  // הסר כל תו שאינו ספרה (wa.me דורש מספר נקי בלי +)
+  const phone=contact.phone.replace(/\D/g,'');
+  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`,'_blank');
+}
+
+// הדפסה / שמירה כ-PDF דרך הדפדפן
+function invPrintShoppingList(){
+  const grouped=window._shoppingListGrouped||{};
+  const suppliers=window._shoppingListSuppliers||[];
+  const plannedTanks=window._shoppingListPlannedTanks||0;
+  const date=new Date().toLocaleDateString('he-IL');
+  const headerNote=plannedTanks>0?` (כולל צפי ל-${plannedTanks} מיכלי דישון)`:'';
+  let html=`<!DOCTYPE html><html dir="rtl" lang="he"><head><meta charset="UTF-8"><title>רשימת רכש ${date}</title><style>
+    body{font-family:Arial,sans-serif;padding:30px;background:#fff;color:#000;direction:rtl}
+    h1{font-size:22px;margin:0 0 4px;color:#0d1a38}
+    .date{color:#666;font-size:13px;margin-bottom:20px}
+    .sup{margin-top:20px;padding:8px 12px;background:#0d1a38;color:#fff;border-radius:6px;font-weight:700;font-size:16px}
+    table{width:100%;border-collapse:collapse;margin-top:6px}
+    th,td{padding:7px 10px;text-align:right;border-bottom:1px solid #e0e0e0;font-size:13px}
+    th{background:#f5f5f5;font-weight:700;font-size:12px}
+    td.amt{font-weight:700;color:#c87900;text-align:left;width:100px}
+    td.sku{font-family:monospace;color:#666;font-size:11px;width:140px}
+    .foot{margin-top:30px;color:#999;font-size:11px;text-align:center;border-top:1px solid #ddd;padding-top:10px}
+    @media print{body{padding:15px}}
+  </style></head><body>
+    <h1>🛒 רשימת רכש — בסדר</h1>
+    <div class="date">${date}${headerNote}</div>`;
+  suppliers.forEach(sup=>{
+    const items=grouped[sup]||[];
+    html+=`<div class="sup">🏪 ${sup} (${items.length} פריטים)</div>
+      <table><thead><tr><th>פריט</th><th>מק״ט</th><th>כמות</th></tr></thead><tbody>`;
+    items.forEach(i=>{
+      html+=`<tr><td>${i.name}</td><td class="sku">${i.sku||'—'}</td><td class="amt">${i.amount} ${i.unit}</td></tr>`;
+    });
+    html+='</tbody></table>';
+  });
+  html+=`<div class="foot">הופק מאפליקציית בסדר · ${date}</div></body></html>`;
+  const w=window.open('','_blank','width=800,height=600');
+  if(!w){toast('⚠️ חוסם חלונות קופצים - אפשר חלונות קופצים לאתר');return;}
+  w.document.write(html);
+  w.document.close();
+  // המתן קצת לפני הדפסה
+  setTimeout(()=>{try{w.print();}catch(e){}},400);
 }
 
 function invSendEmail(){
