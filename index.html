@@ -493,6 +493,19 @@ textarea{resize:vertical;min-height:60px;line-height:1.6}
   .daily-task{padding:6px 10px;margin-bottom:4px;font-size:11px}
   .sheet{max-height:95vh}
 }
+
+/* ─── מלאי: גריד שורות רספונסיבי ─── */
+.inv-row-grid{display:grid;grid-template-columns:28px 1fr 170px 70px 70px;gap:8px;align-items:center}
+.inv-row-grid .inv-name{font-size:13px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:600px){
+  .inv-row-grid{grid-template-columns:22px 1fr 118px 44px 44px;gap:4px}
+  .inv-row-grid .inv-name{white-space:normal;line-height:1.25;font-size:12px}
+  .inv-row-grid input[type="number"].inv-qty{width:40px!important;font-size:13px!important}
+  .inv-row-grid input[type="number"].inv-target{width:38px!important;font-size:11px!important}
+  .inv-row-grid button.inv-step{width:24px!important;height:26px!important;font-size:14px!important}
+  .inv-row-grid .inv-deficit{font-size:11px!important;padding:3px 6px!important;min-width:28px!important}
+  .inv-row-grid .inv-meta{font-size:8px!important}
+}
 </style>
 </head>
 <body>
@@ -5694,7 +5707,7 @@ function vInv(m){
   </div>`;
 
   // ── כותרת טבלה (sticky) ──
-  h+=`<div style="position:sticky;top:0;background:var(--bg);z-index:5;display:grid;grid-template-columns:28px 1fr 170px 70px 70px;gap:8px;padding:6px 10px;font-size:10px;font-weight:800;color:var(--txm);border-bottom:1px solid var(--brd);align-items:center">
+  h+=`<div class="inv-row-grid" style="position:sticky;top:0;background:var(--bg);z-index:5;padding:6px 10px;font-size:10px;font-weight:800;color:var(--txm);border-bottom:1px solid var(--brd)">
     <div style="text-align:center"><input type="checkbox" id="inv-select-all" onchange="invSelectAll(this.checked)" style="width:16px;height:16px;cursor:pointer" title="בחר הכל"></div>
     <div>פריט</div>
     <div style="text-align:center">כמות במלאי</div>
@@ -5721,30 +5734,30 @@ function vInv(m){
       const forecastTxt=f.forecast>0?`<span style="color:#fbbf24;margin-right:4px">+${f.forecast} צפוי</span>`:'';
       const meta=(supplier||sku||perTankTxt||forecastTxt)?`<div style="font-size:9px;color:var(--txm);margin-top:1px;display:flex;gap:4px;flex-wrap:wrap">${supplier?`<span>🏪 ${supplier}</span>`:''}${sku?`<span>#${sku}</span>`:''}${perTankTxt}${forecastTxt}</div>`:'';
       const isSelected=window._invSelected?.has(f.id);
-      h+=`<div style="display:grid;grid-template-columns:28px 1fr 170px 70px 70px;gap:8px;align-items:center;padding:8px 10px;background:${isSelected?'rgba(96,165,250,.08)':rowBg};border-bottom:1px solid var(--brd);transition:background .15s" onmouseenter="this.style.background='var(--surf2)'" onmouseleave="this.style.background='${isSelected?'rgba(96,165,250,.08)':rowBg}'">
+      h+=`<div class="inv-row-grid" style="padding:8px 10px;background:${isSelected?'rgba(96,165,250,.08)':rowBg};border-bottom:1px solid var(--brd);transition:background .15s" onmouseenter="this.style.background='var(--surf2)'" onmouseleave="this.style.background='${isSelected?'rgba(96,165,250,.08)':rowBg}'">
         <div style="text-align:center"><input type="checkbox" class="inv-row-check" ${isSelected?'checked':''} onclick="event.stopPropagation()" onchange="invToggleSelect('${f.id}',this.checked)" style="width:16px;height:16px;cursor:pointer"></div>
         <div style="display:flex;align-items:center;gap:4px;min-width:0">
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:700;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.name}</div>
+            <div class="inv-name">${f.name}</div>
             <div style="font-size:10px;color:var(--txm)">${f.unit}</div>
-            ${meta}
+            ${meta.replace('<div style="font-size:9px;','<div class="inv-meta" style="font-size:9px;')}
           </div>
           ${editBtn}${removeBtn}
         </div>
         <!-- stepper -->
         <div style="display:flex;align-items:center;gap:2px;justify-content:center">
-          <button onclick="invAdjust('${f.id}',-1)" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">−</button>
-          <input type="number" value="${hasQty?f.qty:''}" placeholder="—" onclick="this.select()" onchange="invSetQtyDirect('${f.id}',this.value)" style="width:52px;height:28px;border-radius:6px;border:1px solid ${hasQty?qtyColor:'var(--brd)'};background:var(--bg);color:${qtyColor};font-size:14px;font-weight:900;text-align:center;font-family:'Heebo',sans-serif;padding:0 2px;-moz-appearance:textfield" step="1" min="0">
-          <button onclick="invAdjust('${f.id}',1)" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">+</button>
+          <button class="inv-step" onclick="invAdjust('${f.id}',-1)" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">−</button>
+          <input class="inv-qty" type="number" value="${hasQty?f.qty:''}" placeholder="—" onclick="this.select()" onchange="invSetQtyDirect('${f.id}',this.value)" style="width:52px;height:28px;border-radius:6px;border:1px solid ${hasQty?qtyColor:'var(--brd)'};background:var(--bg);color:${qtyColor};font-size:14px;font-weight:900;text-align:center;font-family:'Heebo',sans-serif;padding:0 2px;-moz-appearance:textfield" step="1" min="0">
+          <button class="inv-step" onclick="invAdjust('${f.id}',1)" style="width:28px;height:28px;border-radius:6px;border:1px solid var(--brd);background:var(--surf2);color:var(--tx);font-size:16px;font-weight:900;cursor:pointer;line-height:1">+</button>
         </div>
         <!-- יעד (editable) -->
         <div style="text-align:center">
-          <input type="number" value="${f.target||''}" onclick="this.select()" onchange="invSetTarget('${f.id}',this.value)" style="width:48px;height:24px;border-radius:5px;border:1px solid var(--brd);background:var(--bg);color:var(--txd);font-size:12px;font-weight:700;text-align:center;font-family:'Heebo',sans-serif" min="0">
+          <input class="inv-target" type="number" value="${f.target||''}" onclick="this.select()" onchange="invSetTarget('${f.id}',this.value)" style="width:48px;height:24px;border-radius:5px;border:1px solid var(--brd);background:var(--bg);color:var(--txd);font-size:12px;font-weight:700;text-align:center;font-family:'Heebo',sans-serif" min="0">
         </div>
         <!-- לקנות (חוסר) -->
         <div style="text-align:center">
           ${f.deficit>0
-            ?`<span style="display:inline-block;background:#fbbf24;color:#0d1a38;padding:4px 10px;border-radius:12px;font-size:13px;font-weight:900;min-width:36px">${f.deficit}</span>`
+            ?`<span class="inv-deficit" style="display:inline-block;background:#fbbf24;color:#0d1a38;padding:4px 10px;border-radius:12px;font-size:13px;font-weight:900;min-width:36px">${f.deficit}</span>`
             :(hasQty?`<span style="color:#5ec98a;font-size:14px">✓</span>`:`<span style="color:var(--txm)">—</span>`)}
         </div>
       </div>`;
