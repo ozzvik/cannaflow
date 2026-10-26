@@ -1735,11 +1735,9 @@ function vGantt(m){
   anchor.setDate(anchor.getDate()-anchor.getDay()+off*7);
   // כל ה-1095 ימים — אבל נשתמש רק בחלון נראה
   const allDays=Array.from({length:G_DAYS},(_,i)=>{const d=new Date(anchor);d.setDate(anchor.getDate()+i);return d.toISOString().split('T')[0];});
-  // קח רק 100 ימים סביב המוקד (4 לפני, 96 קדימה)
-  // ה-anchor הוא יום ראשון של השבוע הנוכחי, אז 0 = יום ראשון של "היום"
-  // נחזיר 100 ימים: 14 לפני, 86 קדימה
+  // חלון תצוגה: 180 ימים (~6 חודשים) מהשבוע הנוכחי קדימה
   const visibleStart=0; // מתחיל מהשבוע הנוכחי
-  const visibleCount=100;
+  const visibleCount=180;
   const days=allDays.slice(visibleStart,visibleStart+visibleCount);
   // שמור לטיפול בגלילה
   _ganttData={allDays,anchor:new Date(anchor),visibleStart,visibleCount};
