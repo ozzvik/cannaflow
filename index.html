@@ -78,6 +78,11 @@ header{background:var(--surf);border-bottom:1px solid var(--brd);padding:0 10px;
 .gantt-container{flex:1;overflow:hidden;display:flex;flex-direction:column}
 .gantt-scroll-wrap{overflow:auto;flex:1;position:relative}
 .gantt-table{border-collapse:collapse;table-layout:fixed}
+.gantt-table col.g-col-sticky{width:80px}
+.gantt-table col.g-col-day{width:44px}
+@media(min-width:900px){.gantt-table col.g-col-day{width:52px}}
+@media(min-width:1200px){.gantt-table col.g-col-day{width:58px}}
+@media (max-height:500px) and (orientation:landscape){.gantt-table col.g-col-day{width:38px}}
 .g-sticky{position:sticky;right:0;z-index:10;background:var(--surf);min-width:72px;width:80px}
 .g-day-hdr{padding:3px 1px;font-size:9px;font-weight:700;text-align:center;border-bottom:2px solid var(--brd);border-left:1px solid var(--brd);color:var(--txm);background:var(--surf);vertical-align:bottom;cursor:pointer;min-width:44px;width:44px;max-width:44px;box-sizing:border-box;overflow:hidden}
 .g-day-hdr.today{background:#0d1a38;color:var(--blu);border-bottom:3px solid var(--blu);font-weight:900}
@@ -1799,7 +1804,9 @@ function vGantt(m){
     <div style="position:relative;flex-shrink:0" id="gf-wrap"></div>
   </div>
   <div class="gantt-container"><div class="gantt-scroll-wrap" id="gs" onwheel="onGanttWheel(event)">
-  <table class="gantt-table"><thead>
+  <table class="gantt-table">
+  <colgroup><col class="g-col-sticky">${days.map(()=>`<col class="g-col-day">`).join('')}</colgroup>
+  <thead>
     <tr><th class="g-sticky g-room-hdr"></th>${mSpans.map(ms=>`<th colspan="${ms.count}" class="g-month-hdr">${ms.label}</th>`).join('')}</tr>
     <tr><th class="g-sticky g-room-hdr" style="font-size:8px;color:var(--txm);font-weight:400">שבועות</th>${wSpans.map(ws=>`<th colspan="${ws.count}" class="g-week-hdr" onclick="openWeeklyForDate('${ws.start}')" title="לחץ לפתיחת תצוגה שבועית"><span class="week-btn">${ws.label}</span></th>`).join('')}</tr>
     <tr><th class="g-sticky g-room-hdr" style="font-size:9px;color:var(--txm);font-weight:400">${S.rooms.length} חדרים</th>`;
